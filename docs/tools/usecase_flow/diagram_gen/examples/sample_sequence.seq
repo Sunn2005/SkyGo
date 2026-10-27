@@ -1,0 +1,15 @@
+# Ví dụ sequence diagram kiểu robustness (chạy: python seqgen.py examples/sample_sequence.seq -o /tmp/out)
+title: Ví dụ Sequence
+actor u "Người học"
+boundary b "Màn hình Quiz" "Giao diện"
+control c "QuizService" "Xử lý nghiệp vụ"
+entity q "QuizDAO" "Truy cập dữ liệu"
+u -> b : chọn đáp án
+b -> c : gửi đáp án
+c -> q : kiểm tra đáp án
+q --> c : đúng / sai
+alt: đáp án đúng
+c --> b : giải thích
+else: đáp án sai
+c --> b : báo chưa đúng
+end

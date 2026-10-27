@@ -1,0 +1,26 @@
+# Sequence mẫu cho BKG-UC-001; các giả định nằm trong rules.md.
+title: BKG-UC-001 Tạo đặt chỗ
+actor u "User"
+boundary ui "Màn hình đặt chỗ" "Giao diện User"
+control service "BookingService" "Xử lý nghiệp vụ"
+entity flightDao "FlightDAO" "Truy cập dữ liệu chuyến bay"
+entity bookingDao "BookingDAO" "Truy cập dữ liệu booking"
+
+u -> ui : chọn bắt đầu đặt chỗ
+ui --> u : hiển thị biểu mẫu hành khách và hành lý
+loop: mỗi hành khách người lớn
+u -> ui : nhập thông tin và chọn hành lý
+end
+u -> ui : xem lại và xác nhận tổng giá
+ui -> service : gửi yêu cầu tạo booking
+service -> flightDao : lấy chuyến bay và giá hiện tại
+flightDao --> service : chuyến bay và giá hoặc không có chuyến phù hợp
+alt: dữ liệu hợp lệ và chuyến còn phù hợp
+service -> bookingDao : lưu booking, hành khách và hành lý
+bookingDao --> service : mã booking đã lưu
+service --> ui : trả kết quả tạo booking
+ui --> u : hiển thị mã booking và bước thanh toán PayOS
+else: dữ liệu hoặc chuyến không hợp lệ
+service --> ui : trả lỗi cần xử lý
+ui --> u : yêu cầu sửa dữ liệu hoặc chọn lại chuyến
+end

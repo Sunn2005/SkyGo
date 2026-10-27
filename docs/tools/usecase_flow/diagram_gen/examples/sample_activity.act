@@ -1,0 +1,20 @@
+# Ví dụ activity diagram swimlane (chạy: python actgen.py examples/sample_activity.act -o /tmp/out)
+title: Ví dụ Activity
+lane N "Người học"
+lane S "Hệ thống"
+start st N
+action a1 N "Bấm sang bước Quiz"
+action a2 S "Hiển thị quiz đầu tiên"
+action a3 N "Chọn đáp án"
+decision d1 S "Đáp án đúng?"
+action a4 S "Hiển thị giải thích"
+action a5 N "Bấm Tiếp tục"
+end e1 S
+st -> a1
+a1 -> a2
+a2 -> a3
+a3 -> d1
+d1 -> a4 : Đúng
+d1 -> a3 : Sai [back]
+a4 -> a5
+a5 -> e1

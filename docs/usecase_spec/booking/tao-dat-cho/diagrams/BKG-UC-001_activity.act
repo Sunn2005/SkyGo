@@ -1,0 +1,33 @@
+# Activity mẫu cho BKG-UC-001; các giả định nằm trong rules.md.
+title: BKG-UC-001 Tạo đặt chỗ
+lane U "User"
+lane S "Hệ thống"
+
+start st U
+action a1 U "Bắt đầu đặt chỗ cho chuyến đã chọn"
+action a2 S "Hiển thị biểu mẫu hành khách và hành lý"
+action a3 U "Nhập thông tin và chọn hành lý"
+action a4 S "Kiểm tra dữ liệu, số người và chuyến bay"
+decision d1 S "Thông tin hợp lệ và chuyến phù hợp?"
+action a5 S "Hiển thị lỗi để User sửa"
+action a6 U "Sửa thông tin hoặc chọn lại chuyến"
+action a7 S "Tính và hiển thị thông tin xem lại"
+action a8 U "Kiểm tra và xác nhận tổng giá"
+action a9 S "Chống gửi lặp, lưu booking và trả mã"
+action a10 S "Hiển thị bước thanh toán PayOS"
+end e1 S
+
+st -> a1
+a1 -> a2
+a2 -> a3
+a3 -> a4
+a4 -> d1
+d1 -> a5 : Không
+a5 -> a6
+a6 -> a3 : Sửa [back]
+d1 -> a7 : Có
+a7 -> a8
+a8 -> a9
+a9 -> a10
+a9 -> a10
+a10 -> e1

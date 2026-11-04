@@ -10,7 +10,7 @@ Feature này được tạo để thử bộ công cụ Use Case SkyGo. **Các l
 
 ## Phạm vi mẫu
 
-User đã đăng nhập, chọn chuyến một chiều phù hợp, nhập thông tin 1–4 hành khách người lớn, chọn hành lý, xem lại giá và xác nhận tạo booking. Thanh toán PayOS là luồng riêng; UC này chỉ trả mã booking để tiếp tục thanh toán.
+User đã đăng nhập, chọn đủ chuyến một chiều hoặc khứ hồi phù hợp, nhập thông tin 1–4 hành khách người lớn, chọn hành lý, xem lại giá và xác nhận tạo booking. Thanh toán PayOS là luồng riêng; UC này chỉ trả mã booking để tiếp tục thanh toán.
 
 ## File nguồn
 

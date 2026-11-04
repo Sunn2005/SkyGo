@@ -1,18 +1,22 @@
 import { View } from "react-native";
-import { type Receipt } from "@/context/booking-context";
-import { dateLabel, fullName, getLegs, money } from "@/data/booking";
+import type { BookingSnapshot } from "@/modules/booking/types";
+import { dateLabel } from "@/shared/utils/date";
+import { fullName } from "@/modules/booking/utils/traveller";
+import { getLegs } from "@/modules/flights/utils/trip";
+import { includedBagWeight } from "@/modules/booking/services/booking-rules";
+import { money } from "@/shared/utils/format";
 import {
   Badge,
   Card,
   Divider,
-  FlightTimes,
   Label,
   Row,
   SummaryRow,
-} from "@/components/ui";
-import { space } from "@/theme";
+} from "@/shared/components/ui";
+import { FlightTimes } from "@/modules/flights/components/flight-times";
+import { space } from "@/shared/theme";
 
-export function Ticket({ receipt: r }: { receipt: Receipt }) {
+export function Ticket({ receipt: r }: { receipt: BookingSnapshot }) {
   const legs = getLegs(r.search);
   return (
     <Card style={{ gap: 15 }}>
@@ -53,22 +57,22 @@ export function Ticket({ receipt: r }: { receipt: Receipt }) {
             label={`Hành khách ${r.travellers.length > 1 ? i + 1 : ""}`}
             value={fullName(p)}
           />
+          <SummaryRow label="Hạng vé" value={r.search.cabin} />
           <SummaryRow
-            label="Hạng ghế & chỗ ngồi"
-            value={`${r.search.cabin} · ${legs.map((_, l) => r.seats[`${l}-${i}`] || "Tự xếp").join(" / ")}`}
+            label="Hành lý đã gồm / chặng"
+            value={`Xách tay 10 kg + 1 × ${includedBagWeight(r.search.cabin)} kg`}
           />
-          <SummaryRow
-            label="Hành lý / chặng"
-            value={`Xách tay${p.bags ? ` + ${p.bags} × 23 kg` : ""}`}
-          />
+          {legs.map((_, l) => (
+            <SummaryRow
+              key={l}
+              label={`Mua thêm · ${l === 0 ? "Lượt đi" : "Lượt về"}`}
+              value={`${p.extraBags[l] ?? 0} kiện × 23 kg`}
+            />
+          ))}
         </View>
       ))}
       <Divider />
-      <SummaryRow
-        label={`Đã trả mẫu · ${r.card.split("···· ")[1] ?? "Thẻ mẫu"}`}
-        value={money(r.total)}
-        bold
-      />
+      <SummaryRow label="Đã trả mẫu · PayOS" value={money(r.total)} bold />
     </Card>
   );
 }

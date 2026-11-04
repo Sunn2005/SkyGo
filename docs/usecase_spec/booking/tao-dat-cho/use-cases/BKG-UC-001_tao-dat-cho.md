@@ -8,7 +8,7 @@
 | Mục đích: | Cho phép User tạo booking cho chuyến bay đã chọn và các hành khách người lớn đi cùng. |
 | Mô tả: | User nhập thông tin hành khách, chọn hành lý, xem lại tổng giá và xác nhận tạo booking để tiếp tục thanh toán PayOS. |
 | Actor: | User |
-| Tiền điều kiện: | User đã đăng nhập {{ref: BR-BKG-001}}<br>User đã chọn chuyến một chiều trong dữ liệu mẫu và số lượng hành khách từ 1 đến 4 người lớn {{ref: BR-BKG-002, BR-BKG-004}} |
+| Tiền điều kiện: | User đã đăng nhập {{ref: BR-BKG-001}}<br>User đã chọn đủ chuyến một chiều hoặc hai chuyến đi/về cho khứ hồi trong dữ liệu mẫu và số lượng hành khách từ 1 đến 4 người lớn {{ref: BR-BKG-002, BR-BKG-004}} |
 | Hậu điều kiện: | Booking cùng thông tin hành khách và lựa chọn hành lý được lưu, hệ thống trả mã booking để tiếp tục thanh toán |
 
 ### Luồng sự kiện chính

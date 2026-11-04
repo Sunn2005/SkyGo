@@ -13,34 +13,47 @@ Mở bằng Expo Go tương thích SDK 58 trên iOS/Android. Xem nhanh trên web
 
 ## Luồng trải nghiệm
 
-Tìm chuyến → Kết quả → Chi tiết → Hành khách → Hành lý → Chỗ ngồi → Thanh toán → Xác nhận / Xem vé.
+Tìm chuyến → Chọn chuyến → Đăng nhập nếu cần → Hành khách → Hành lý → Xem lại → Tạo booking → PayOS mô phỏng → Xác nhận / Xem vé.
 
-- Một chiều, khứ hồi và hai chặng nhiều điểm đến; chọn chuyến riêng cho mỗi chặng.
-- Tối đa 4 người lớn từ 12 tuổi. Thông tin mỗi người, hành lý và ghế ngồi được giữ khi quay lại hoặc sửa từ màn thanh toán.
-- Lọc theo hãng, giá tối đa, bay thẳng, giờ khởi hành; sắp xếp và lưu chuyến yêu thích.
-- Giá USD đã gồm thuế. Ký gửi: $45/kiện/người/chặng. Ghế: $24/chỗ/chặng. Bảo vệ chuyến đi: $29/người/hành trình. Thương gia: 2 lần giá vé Phổ thông.
-- Không thể chọn ghế đã có người hoặc trùng ghế của hành khách khác trong cùng chặng.
-- Mastercard `9876` hoặc Visa `4242`: thanh toán mẫu thành công. Thẻ `0002`: bị từ chối, đổi thẻ rồi thử lại.
-- Mặc định 1 người: vé $486 + 1 kiện $45 + ghế 12A $24 = **$555**.
+- Một chiều hoặc khứ hồi, 1–4 người lớn; khứ hồi chọn đủ hai chuyến và thanh toán chung.
+- Hành khách dùng CCCD hoặc hộ chiếu. Hành lý mua thêm chọn riêng từng người/từng chặng.
+- Giá VND đã gồm thuế/phí. Phổ thông gồm 1 kiện 23 kg; Thương gia gồm 1 kiện tối đa 32 kg. Mua thêm tối đa 1 kiện 23 kg giá 324.000đ mỗi người mỗi chặng.
+- Lọc, sắp xếp và lưu chuyến yêu thích. PayOS mẫu hỗ trợ thành công, thất bại, hủy, hết hạn; thử lại dùng cùng booking.
+- Booking đã tạo lưu trên thiết bị theo tài khoản. Tài khoản mới, phiên đăng nhập và bản nháp chỉ giữ trong bộ nhớ.
 
-Đây là bản mẫu: không có API hãng bay, giao dịch thật, email hay vé có giá trị đi lại. Dữ liệu chỉ ở trong bộ nhớ và được xóa khi khởi động lại ứng dụng. Chỉ nhập thông tin giả.
+Đây là bản mẫu: không có API hãng bay, giao dịch thật, email hay vé có giá trị đi lại. Chỉ nhập thông tin giả.
 
-## Cấu trúc
+## Cấu trúc frontend theo module
 
-- `src/app/`: các route Expo Router.
-- `src/context/booking-context.tsx`: trạng thái hành trình, lựa chọn và vé đã xác nhận.
-- `src/data/booking.ts`: dữ liệu mẫu, định dạng và kiểm tra ngày.
-- `src/components/`: các thành phần giao diện dùng chung.
-- `src/theme/`: màu sắc và font Inter theo Figma.
-- `assets/figma/`: ảnh, SVG gốc được tải từ thiết kế, dùng trực tiếp từ tệp cục bộ.
+Mã nguồn được chia theo chức năng. Khi sửa giao diện, bắt đầu từ `screens/` của module tương ứng. Xem [hướng dẫn frontend](docs/frontend-modules.md) để tra cứu file và quy tắc thêm màn hình.
+
+| Thư mục                | Phụ trách                                            |
+| ---------------------- | ---------------------------------------------------- |
+| `src/app/`             | Điểm vào Expo Router và cấu hình điều hướng          |
+| `src/modules/flights/` | Trang chủ, tìm chuyến, bộ lọc, chi tiết và yêu thích |
+| `src/modules/booking/` | Hành khách, hành lý, model và dịch vụ booking        |
+| `src/modules/payment/` | Xem lại, PayOS mẫu và trạng thái thanh toán          |
+| `src/modules/tickets/` | Xác nhận, xem và chia sẻ vé mẫu                      |
+| `src/modules/account/` | Hồ sơ tài khoản                                      |
+| `src/modules/support/` | Trợ giúp                                             |
+| `src/shared/`          | UI cơ bản, theme, asset, định dạng tiền và ngày      |
+| `assets/figma/`        | Ảnh và SVG gốc từ thiết kế                           |
+
+Module tài khoản có đăng ký, đăng nhập, hồ sơ và đăng xuất bằng dữ liệu mẫu. Dùng `0912345678` / `SkyGoDemo@2027` hoặc tạo tài khoản mới để trải nghiệm trong phiên sử dụng. Xem [hướng dẫn tài khoản và nối API](docs/account-module.md).
 
 ## Kiểm tra
 
 ```sh
 npm run lint
 npm run typecheck
+npm run test:account
+npm run test:booking
 npx expo export --platform web
 npx expo export --platform ios --platform android --output-dir /tmp/skygo-native-export
 ```
 
-Đã kiểm thử luồng trên trình duyệt: đặt vé một chiều, email sai rồi sửa, đổi hành lý, bỏ chọn ghế, thanh toán thất bại rồi phục hồi, xem vé; khứ hồi 2 người với lựa chọn hành lý/ghế riêng và bảo vệ chuyến đi. Đã kiểm tra đóng gói iOS và Android. Cần kiểm thử thêm trên thiết bị thật cho bàn phím, vùng an toàn và các điều khiển native.
+Đã kiểm thử luồng đăng nhập, một chiều/khứ hồi, CCCD/hộ chiếu, hành lý, hủy/thử lại thanh toán và phục hồi booking trên web. Cần kiểm thử thêm trên thiết bị thật cho bàn phím, vùng an toàn và các điều khiển native.
+
+## Luồng đặt vé đã duyệt
+
+Xem [booking-flow.md](docs/booking-flow.md) cho luồng một chiều/khứ hồi yêu cầu đăng nhập, CCCD/hộ chiếu, hành lý theo chặng, bảng giá VND, lịch sử trên thiết bị và PayOS mô phỏng. Luồng mới thay phần chọn ghế/thẻ/bảo hiểm mẫu; tài khoản mới vẫn chỉ tồn tại trong phiên.

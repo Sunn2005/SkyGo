@@ -5,12 +5,16 @@ Quy tắc đã nêu trong kế hoạch được ghi riêng với giả định k
 ## Quy tắc theo kế hoạch triển khai
 
 - **BR-BKG-001:** User phải đăng nhập trước khi bắt đầu tạo booking.
-- **BR-BKG-002:** MVP chỉ hỗ trợ chuyến một chiều và từ 1 đến 4 hành khách người lớn.
+- **BR-BKG-002:** Hỗ trợ chuyến một chiều hoặc khứ hồi và từ 1 đến 4 hành khách người lớn; khứ hồi dùng chung danh sách hành khách, một booking và thanh toán chung.
 - **BR-BKG-003:** Trước khi thanh toán, User được xem lại chuyến bay, hành khách, hành lý và tổng giá.
 - **BR-BKG-004:** Booking chỉ được tạo cho chuyến bay nằm trong dữ liệu mẫu hiện có.
 - **BR-BKG-005:** Backend phải chống tạo booking trùng khi User gửi lặp thao tác xác nhận.
 
-## Giả định kiểm thử — chưa chốt
+## Cập nhật frontend đã được duyệt
+
+Người dùng duyệt triển khai frontend mock: đăng ký → đăng nhập; CCCD/hộ chiếu; Phổ thông gồm 1 kiện 23 kg, Thương gia gồm 1 kiện tối đa 32 kg; mua thêm tối đa 1 kiện 23 kg giá 324.000đ mỗi người mỗi chặng; giá mẫu VND đã gồm thuế/phí. Chi tiết và giới hạn tích hợp: [booking-flow.md](../../../../frontend/docs/booking-flow.md). Các giả định kiểm thử cũ bên dưới được giữ để truy vết và không áp dụng cho bảng giá frontend mới.
+
+## Giả định kiểm thử cũ — chưa chốt cho backend
 
 - **BR-BKG-101:** Mỗi hành khách cần họ, tên, ngày sinh, giới tính và email/số điện thoại liên hệ của người đặt chỗ.
 - **BR-BKG-102:** Mỗi hành khách chọn 0, 1 hoặc 2 kiện hành lý ký gửi; phí giả định là 0 USD, 45 USD hoặc 90 USD cho mỗi hành khách.

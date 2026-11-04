@@ -1,0 +1,48 @@
+import type { Flight } from "../types";
+
+export const flights: Flight[] = [
+  {
+    id: "sh201",
+    airline: "Vietnam Airlines",
+    number: "VN 201",
+    departure: "10:30",
+    arrival: "12:35",
+    price: 1494000,
+    businessPrice: 3957000,
+    duration: "2 giờ 05 phút",
+    stops: 0,
+  },
+  {
+    id: "ew107",
+    airline: "Vietjet Air",
+    number: "VJ 107",
+    departure: "13:15",
+    arrival: "15:20",
+    price: 1594000,
+    businessPrice: 4057000,
+    duration: "2 giờ 05 phút",
+    stops: 0,
+  },
+  {
+    id: "sh205",
+    airline: "Vietnam Airlines",
+    number: "VN 205",
+    departure: "17:00",
+    arrival: "19:05",
+    price: 1694000,
+    businessPrice: 4157000,
+    duration: "2 giờ 05 phút",
+    stops: 0,
+  },
+  {
+    id: "ew109",
+    airline: "Vietjet Air",
+    number: "VJ 109",
+    departure: "08:00",
+    arrival: "14:30",
+    price: 1394000,
+    businessPrice: 3857000,
+    duration: "4 giờ 30 phút",
+    stops: 1,
+  },
+];

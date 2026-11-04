@@ -161,3 +161,25 @@ test("PDF registration works with phone and passwords only", async () => {
   assert.equal(user.email, null);
   assert.ok((await api.login(input)).accessToken);
 });
+
+test("password accepts exactly 8 characters and requires every criterion", () => {
+  for (const password of ["Abcd12!@", "LongerPassword1!"]) {
+    assert.equal(
+      validateRegister({ ...registration, password, confirmPassword: password })
+        .password,
+      undefined,
+    );
+  }
+  for (const password of [
+    "Abc12!@",
+    "abcd12!@",
+    "ABCD12!@",
+    "Abcdef!@",
+    "Abcd1234",
+  ]) {
+    assert.ok(
+      validateRegister({ ...registration, password, confirmPassword: password })
+        .password,
+    );
+  }
+});

@@ -9,7 +9,7 @@ import { Button, Icon, Label, Notice, Tap } from "@/shared/components/ui";
 import { colors } from "@/shared/theme";
 import { useAccount } from "../context/account-context";
 import { AccountError, type RegisterInput } from "../types";
-import { validateRegister } from "../utils/validation";
+import { passwordRequirements, validateRegister } from "../utils/validation";
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
@@ -121,9 +121,30 @@ export default function RegisterScreen() {
             editable={!busy}
             error={fields.password}
           />
-          <Label size={11} muted style={{ marginTop: -12 }}>
-            Mật khẩu từ 12 ký tự, có hoa, thường, số, ký tự đặc biệt.
-          </Label>
+          <View
+            style={{ marginTop: -10, gap: 6 }}
+            accessibilityLiveRegion="polite"
+          >
+            {passwordRequirements.map((rule) => {
+              const passed = rule.test(input.password);
+              const color = passed ? "#16803C" : colors.muted;
+              return (
+                <View
+                  key={rule.label}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                  accessible
+                  accessibilityLabel={`${rule.label}: ${passed ? "đã đạt" : "chưa đạt"}`}
+                >
+                  <Label size={13} color={color} weight="bold">
+                    {passed ? "✓" : "○"}
+                  </Label>
+                  <Label size={12} color={color}>
+                    {rule.label}
+                  </Label>
+                </View>
+              );
+            })}
+          </View>
           <PasswordField
             label="Xác nhận mật khẩu"
             value={input.confirmPassword}

@@ -18,7 +18,6 @@ export function validateLogin(input: LoginInput) {
 
 export function validateRegister(input: RegisterInput) {
   const errors = validateLogin(input);
-  if (!input.fullName.trim()) errors.fullName = "Vui lòng nhập họ và tên.";
   if (
     input.email.trim() &&
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())

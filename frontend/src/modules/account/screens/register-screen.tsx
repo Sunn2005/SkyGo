@@ -1,16 +1,17 @@
 import { useRef, useState } from "react";
-import { View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Stack } from "expo-router/stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
-import { Screen } from "@/shared/components/screen";
 import { Field } from "@/shared/components/fields";
-import { Button, Label, Notice, Tap } from "@/shared/components/ui";
+import { Button, Icon, Label, Notice, Tap } from "@/shared/components/ui";
 import { colors } from "@/shared/theme";
-import { PasswordField } from "../components/password-field";
 import { useAccount } from "../context/account-context";
 import { AccountError, type RegisterInput } from "../types";
 import { validateRegister } from "../utils/validation";
 
 export default function RegisterScreen() {
+  const insets = useSafeAreaInsets();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const { session, register } = useAccount();
   const [input, setInput] = useState<RegisterInput>({
@@ -59,91 +60,113 @@ export default function RegisterScreen() {
     }
   };
   return (
-    <Screen title="Đăng ký tài khoản">
-      <Label size={28} weight="bold">
-        Hành trình bắt đầu từ đây.
-      </Label>
-      <Label muted>Tạo tài khoản SkyGo bằng số điện thoại của bạn.</Label>
-      <Notice>
-        Đây là bản mẫu. Hãy dùng thông tin và mật khẩu giả; dữ liệu được đặt lại
-        khi tải lại ứng dụng.
-      </Notice>
-      <Field
-        label="Họ và tên"
-        value={input.fullName}
-        onChangeText={change("fullName")}
-        autoComplete="name"
-        textContentType="name"
-        editable={!busy}
-        error={fields.fullName}
-        placeholder="Nguyễn Văn An"
-      />
-      <Field
-        label="Số điện thoại"
-        value={input.phoneNumber}
-        onChangeText={change("phoneNumber")}
-        keyboardType="phone-pad"
-        autoComplete="tel"
-        editable={!busy}
-        error={fields.phoneNumber}
-        placeholder="0912 345 678"
-      />
-      <Field
-        label="Email (không bắt buộc)"
-        value={input.email}
-        onChangeText={change("email")}
-        keyboardType="email-address"
-        autoComplete="email"
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!busy}
-        error={fields.email}
-        placeholder="ban@example.com"
-      />
-      <PasswordField
-        label="Mật khẩu"
-        value={input.password}
-        onChangeText={change("password")}
-        autoComplete="new-password"
-        textContentType="newPassword"
-        editable={!busy}
-        error={fields.password}
-      />
-      <Label size={12} muted>
-        Ít nhất 12 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt.
-      </Label>
-      <PasswordField
-        label="Xác nhận mật khẩu"
-        value={input.confirmPassword}
-        onChangeText={change("confirmPassword")}
-        autoComplete="new-password"
-        textContentType="newPassword"
-        editable={!busy}
-        error={fields.confirmPassword}
-        returnKeyType="go"
-        onSubmitEditing={() => void submit()}
-      />
-      {!!error && <Notice error>{error}</Notice>}
-      <View style={{ minHeight: 54 }}>
-        <Button
-          title="Tạo tài khoản"
-          onPress={() => void submit()}
-          loading={busy}
-        />
-      </View>
-      <Tap
-        onPress={() =>
-          router.replace({ pathname: "/login", params: { returnTo } })
-        }
-        disabled={busy}
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#EEEEEE" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top + 12,
+          paddingBottom: Math.max(insets.bottom, 24),
+          paddingHorizontal: 24,
+        }}
       >
-        <Label style={{ textAlign: "center" }}>
-          Đã có tài khoản?{" "}
-          <Label color={colors.primary} weight="semibold">
-            Đăng nhập
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Tap
+            label="Quay lại"
+            disabled={busy}
+            onPress={() =>
+              router.canGoBack() ? router.back() : router.replace("/login")
+            }
+            style={{ width: 32 }}
+          >
+            <Icon name="6-6734-imgArrowLeft" size={20} />
+          </Tap>
+          <Label size={18} weight="semibold">
+            SkyGo
           </Label>
-        </Label>
-      </Tap>
-    </Screen>
+        </View>
+        <View style={{ marginTop: 44, gap: 20 }}>
+          <View style={{ gap: 8 }}>
+            <Label size={28} weight="bold">
+              Tạo tài khoản mới
+            </Label>
+            <Label size={12} muted>
+              Đăng ký để bắt đầu hành trình cùng SkyGo
+            </Label>
+          </View>
+          <Field
+            label="Số điện thoại"
+            value={input.phoneNumber}
+            onChangeText={change("phoneNumber")}
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            editable={!busy}
+            error={fields.phoneNumber}
+            placeholder="090 123 4567"
+          />
+          <Field
+            label="Mật khẩu"
+            value={input.password}
+            onChangeText={change("password")}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="••••••••••••"
+            autoComplete="new-password"
+            textContentType="newPassword"
+            editable={!busy}
+            error={fields.password}
+          />
+          <Label size={11} muted style={{ marginTop: -12 }}>
+            Mật khẩu từ 12 ký tự, có hoa, thường, số, ký tự đặc biệt.
+          </Label>
+          <Field
+            label="Xác nhận mật khẩu"
+            value={input.confirmPassword}
+            onChangeText={change("confirmPassword")}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="••••••••••••"
+            autoComplete="new-password"
+            textContentType="newPassword"
+            editable={!busy}
+            error={fields.confirmPassword}
+            returnKeyType="go"
+            onSubmitEditing={() => void submit()}
+          />
+          {!!error && <Notice error>{error}</Notice>}
+          <View style={{ minHeight: 54 }}>
+            <Button
+              title="Đăng ký"
+              onPress={() => void submit()}
+              loading={busy}
+            />
+          </View>
+          <Tap
+            onPress={() =>
+              router.replace({ pathname: "/login", params: { returnTo } })
+            }
+            disabled={busy}
+          >
+            <Label
+              size={13}
+              color={colors.primary}
+              weight="semibold"
+              style={{ textAlign: "center" }}
+            >
+              Đã có tài khoản?{" "}
+              <Label color={colors.primary} weight="semibold">
+                Đăng nhập
+              </Label>
+            </Label>
+          </Tap>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

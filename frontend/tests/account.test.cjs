@@ -57,7 +57,7 @@ test("validates required fields, optional email, password policy and confirmatio
     password: "weak",
     confirmPassword: "other",
   });
-  for (const field of ["fullName", "email", "password", "confirmPassword"])
+  for (const field of ["email", "password", "confirmPassword"])
     assert.ok(errors[field]);
 });
 
@@ -150,4 +150,14 @@ test("expired and unknown sessions are rejected; password is never trimmed", asy
   await assert.rejects(api.me("unknown"), hasCode("UNAUTHENTICATED"));
   now = Date.parse(session.expiresAt);
   await assert.rejects(api.me(session.accessToken), hasCode("UNAUTHENTICATED"));
+});
+
+test("PDF registration works with phone and passwords only", async () => {
+  const api = service();
+  const input = { ...registration, fullName: "", email: "" };
+  assert.deepEqual(validateRegister(input), {});
+  const user = await api.register(input);
+  assert.equal(user.fullName, "");
+  assert.equal(user.email, null);
+  assert.ok((await api.login(input)).accessToken);
 });

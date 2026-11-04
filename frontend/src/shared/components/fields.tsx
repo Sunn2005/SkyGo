@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { TextInput, View, type TextInputProps } from "react-native";
 import { Icon, Label, Row, Tap } from "./ui";
 import { colors as c, fonts, radius, space } from "@/shared/theme";
@@ -7,11 +8,13 @@ export function Field({
   error,
   style,
   half,
+  trailing,
   ...props
 }: TextInputProps & {
   label: string;
   error?: string;
   half?: boolean;
+  trailing?: ReactNode;
   style?: TextInputProps["style"];
 }) {
   return (
@@ -19,26 +22,42 @@ export function Field({
       <Label size={12} muted>
         {label}
       </Label>
-      <TextInput
-        {...props}
-        underlineColorAndroid="transparent"
-        accessibilityLabel={label}
-        placeholderTextColor={c.muted}
-        style={[
-          {
-            minHeight: 46,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
-            borderWidth: 1,
-            borderColor: error ? c.danger : c.line,
-            borderRadius: radius.sm,
-            color: c.ink,
-            fontFamily: fonts.regular,
-            fontSize: 15,
-          },
-          style,
-        ]}
-      />
+      <View style={{ position: "relative" }}>
+        <TextInput
+          {...props}
+          underlineColorAndroid="transparent"
+          accessibilityLabel={label}
+          placeholderTextColor={c.muted}
+          style={[
+            {
+              minHeight: 46,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderWidth: 1,
+              borderColor: error ? c.danger : c.line,
+              borderRadius: radius.sm,
+              color: c.ink,
+              fontFamily: fonts.regular,
+              fontSize: 15,
+            },
+            trailing ? { paddingRight: 52 } : undefined,
+            style,
+          ]}
+        />
+        {trailing && (
+          <View
+            style={{
+              position: "absolute",
+              right: 4,
+              top: 0,
+              bottom: 0,
+              justifyContent: "center",
+            }}
+          >
+            {trailing}
+          </View>
+        )}
+      </View>
       {!!error && (
         <Label size={11} color={c.danger}>
           {error}

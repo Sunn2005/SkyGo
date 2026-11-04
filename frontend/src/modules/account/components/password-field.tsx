@@ -1,30 +1,38 @@
 import { useState } from "react";
-import { View, type TextInputProps } from "react-native";
+import type { TextInputProps } from "react-native";
+import { Image } from "expo-image";
 import { Field } from "@/shared/components/fields";
-import { Label, Tap } from "@/shared/components/ui";
-import { colors } from "@/shared/theme";
+import { Tap } from "@/shared/components/ui";
+
+const eye = require("../../../../assets/icons/eye.svg");
+const eyeOff = require("../../../../assets/icons/eye-off.svg");
 
 export function PasswordField(
   props: TextInputProps & { label: string; error?: string },
 ) {
   const [visible, setVisible] = useState(false);
   return (
-    <View style={{ gap: 2 }}>
-      <Field
-        {...props}
-        secureTextEntry={!visible}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Tap
-        label={`${visible ? "Ẩn" : "Hiện"} ${props.label.toLowerCase()}`}
-        onPress={() => setVisible((value) => !value)}
-        style={{ alignSelf: "flex-end" }}
-      >
-        <Label size={12} color={colors.primary} weight="medium">
-          {visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-        </Label>
-      </Tap>
-    </View>
+    <Field
+      {...props}
+      secureTextEntry={!visible}
+      autoCapitalize="none"
+      autoCorrect={false}
+      trailing={
+        <Tap
+          label={`${visible ? "Ẩn" : "Hiện"} ${props.label.toLowerCase()}`}
+          disabled={props.editable === false}
+          onPress={() => setVisible((value) => !value)}
+          style={{ width: 44, alignItems: "center" }}
+        >
+          <Image
+            source={visible ? eye : eyeOff}
+            style={{ width: 22, height: 22 }}
+            contentFit="contain"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        </Tap>
+      }
+    />
   );
 }

@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Stack } from "expo-router/stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
+import { PasswordField } from "../components/password-field";
 import { Field } from "@/shared/components/fields";
 import { Button, Icon, Label, Notice, Tap } from "@/shared/components/ui";
 import { colors } from "@/shared/theme";
@@ -108,11 +109,10 @@ export default function RegisterScreen() {
             error={fields.phoneNumber}
             placeholder="090 123 4567"
           />
-          <Field
+          <PasswordField
             label="Mật khẩu"
             value={input.password}
             onChangeText={change("password")}
-            secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="••••••••••••"
@@ -124,11 +124,10 @@ export default function RegisterScreen() {
           <Label size={11} muted style={{ marginTop: -12 }}>
             Mật khẩu từ 12 ký tự, có hoa, thường, số, ký tự đặc biệt.
           </Label>
-          <Field
+          <PasswordField
             label="Xác nhận mật khẩu"
             value={input.confirmPassword}
             onChangeText={change("confirmPassword")}
-            secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="••••••••••••"

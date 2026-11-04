@@ -32,6 +32,12 @@ export const airports = [
     terminal: "Nhà ga T1",
   },
   {
+    code: "PQC",
+    city: "Phú Quốc",
+    name: "Sân bay Phú Quốc",
+    terminal: "Nhà ga nội địa",
+  },
+  {
     code: "SIN",
     city: "Singapore",
     name: "Sân bay Changi",

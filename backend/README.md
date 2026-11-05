@@ -35,6 +35,8 @@ Khi thay schema, thêm migration mới (V3, V4...); giữ nguyên migration đã
 | PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
+| POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
+| POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ và lưu review mã hóa gắn với phiên; cần đăng nhập |
 
 ### API chọn điểm đi và điểm đến
 
@@ -298,3 +300,134 @@ là quy tắc nghiệp vụ cố định. Kiểm thử giữ chỗ/resume/concur
 qua `SKYGO_TEST_DB_URL`, tắt scheduler và clock cố định. Fixture được commit để kiểm
 tra các transaction đồng thời, rồi xóa trong teardown; chỉ chạy trên database test riêng.
 
+### API giá và thông tin hành khách
+
+Hai API yêu cầu Bearer token. Mỗi lần gọi kiểm tra hold thuộc tài khoản, ACTIVE,
+chưa hết hạn, chưa gắn đơn và đủ các chiều. Request phải khớp loại hành trình,
+số khách và lựa chọn đang lưu trong hold; không nhận giá do frontend tính.
+Không trừ ghế thêm, không yêu cầu còn đủ ghế chưa bán cho cùng khách và không gia hạn.
+
+Khi mở màn hành khách, gọi `POST /api/v1/booking-quotes`:
+
+```json
+{
+  "seatHoldId": "hold-public-id",
+  "tripType": "ONE_WAY",
+  "passengerCounts": {"adults": 1, "children": 0, "infants": 0},
+  "selections": [{"direction": "OUTBOUND", "flightId": "flight-public-id", "cabinClass": "ECONOMY"}]
+}
+```
+
+Trả 200 với dữ liệu vừa đủ cho tổng tiền cuối màn:
+
+```json
+{"data": {"totalAmount": 3564000, "currency": "VND", "expiresAt": "2026-11-18T03:15:00Z"}}
+```
+
+Giá là **toàn bộ hành khách trên tất cả các chiều**, gồm VAT; khác giá một người lớn
+trên thẻ tìm kiếm. Backend kiểm tra giá cơ sở từng hạng theo policy/cự ly đã lưu và
+hai hạng của cùng chuyến phải nhất quán. Người lớn trả 100%; trẻ em/em bé lấy hệ số
+từ `passenger_fare_rule` theo phạm vi tuyến. Làm tròn HALF_UP giá đơn vị đến đồng rồi
+nhân số khách, cộng mọi dòng và tính VAT 10% một lần trên tổng tiền vé. Thiếu quy tắc
+trẻ em nội địa ngoài Việt Nam trả 422 `UNSUPPORTED_FARE_RULE`; thiếu policy khác hoặc
+giá/cự ly/quyền lợi không nhất quán trả 409 `PRICING_UNAVAILABLE`. Không coi cấu hình
+thiếu là giá 0. Hành lý và suất ăn đã nằm trong giá, không có bước mua thêm hành lý.
+Quote không lưu database hoặc tạo một thời hạn mới; `expiresAt` là hạn hold.
+
+Khi người dùng nhấn Xác nhận, gọi `POST /api/v1/booking-reviews` với tiêu chí giống
+quote, thêm hành khách và thông tin liên hệ:
+
+```json
+{
+  "seatHoldId": "hold-public-id",
+  "tripType": "ONE_WAY",
+  "passengerCounts": {"adults": 1, "children": 0, "infants": 0},
+  "selections": [{"direction": "OUTBOUND", "flightId": "flight-public-id", "cabinClass": "ECONOMY"}],
+  "passengers": [{
+    "clientPassengerId": "p1",
+    "passengerType": "ADULT",
+    "title": "MR",
+    "givenNames": "Pedro",
+    "surname": "Moreno",
+    "dateOfBirth": "1990-03-12",
+    "gender": "MALE",
+    "document": {
+      "documentType": "PASSPORT",
+      "number": "ES1234567",
+      "issuingCountryCode": "ES",
+      "nationalityCountryCode": "ES",
+      "expiresOn": "2030-03-12"
+    }
+  }],
+  "contact": {"email": "pedro.moreno@example.com", "phoneNumber": "090 123 4567"}
+}
+```
+
+Các ID, ngày và tiền trên chỉ minh họa. Trả **201 Created**, `data` có `reviewId`,
+`expiresAt`, `totalAmount`, `currency`, `passengers` và `contact`. Thông tin hành khách
+được chuẩn hóa khoảng trắng; document chỉ có `documentType`, `maskedNumber`,
+`issuingCountryCode`, `nationalityCountryCode`, `expiresOn`, không có số đầy đủ.
+Ví dụ `ES1234567` trả `*****4567`; giấy tờ ngắn <=4 ký tự che toàn bộ.
+
+Quy tắc dữ liệu:
+
+- Danh sách và số lượng mỗi nhóm phải khớp hold; `clientPassengerId` duy nhất.
+- Tuổi tính đủ năm tại ngày khởi hành chiều đi theo múi giờ sân bay đi: ADULT >=12,
+  CHILD từ 2 đến dưới 12, INFANT dưới 2. Ngày sinh không sau ngày hiện tại tại sân bay đi.
+- Người lớn bắt buộc `title`: MR/MRS/MS; trẻ em và em bé phải bỏ qua hoặc null.
+  `gender`: MALE/FEMALE/OTHER. Họ và tên đệm/tên bắt buộc, tối đa 200 ký tự mỗi trường.
+- PERSONAL_ID cần số giấy tờ và quốc gia cấp; không gửi trường quốc tịch/hạn hộ chiếu.
+  PASSPORT cần thêm quốc tịch và ngày hết hạn. Quốc gia là mã ISO alpha-2 viết hoa.
+  Hành trình có chiều quốc tế bắt buộc mọi hành khách dùng hộ chiếu.
+- Hộ chiếu phải còn hạn đến ngày khởi hành cuối cùng, không tự áp điều kiện 6 tháng.
+  Số giấy tờ là chuỗi tối đa 64 ký tự, giữ số 0 đầu và không áp regex CCCD người lớn
+  cho trẻ em/em bé.
+- Email liên hệ bắt buộc, đúng định dạng, tối đa 254 ký tự; số liên hệ nhận di động VN
+  dạng 0... hoặc số quốc tế + với 7–15 chữ số. Khoảng trắng/dấu ngoặc/gạch nối được bỏ,
+  số di động VN được chuẩn hóa +84. Liên hệ nhập một lần cho cả đơn.
+- Mỗi lần xác nhận tạo review mới và vô hiệu review chưa dùng trước đó của hold,
+  không sửa ciphertext cũ. Hạn review bằng hạn hold. Review gắn tài khoản và phiên
+  hiện tại; đăng xuất vô hiệu review chưa dùng. Sửa hold cũng vô hiệu review chưa dùng.
+
+Review chưa tạo booking/payment. Snapshot schema version 1 chứa toàn bộ hành trình,
+hãng/sân bay/lịch bay, hành khách, giấy tờ, liên hệ, quyền lợi từng khách/từng chiều,
+các dòng giá và VAT để bước tạo đơn đối chiếu/sao chép. Dữ liệu này được mã hóa
+AES-256-GCM với nonce ngẫu nhiên, tag 128 bit; envelope có phiên bản và key ID.
+AAD gắn review/tài khoản/phiên/hold/schema để phát hiện tráo payload. Payload lưu tại
+`booking_review.snapshot_ciphertext`; response không trả ciphertext hay khóa.
+Thay đổi snapshot khi chưa tạo đơn phải tạo review mới. UI cần hiển thị tổng tiền
+review trả về trước khi tạo đơn vì backend tính lại giá tại lần xác nhận.
+
+### Cấu hình khóa mã hóa review
+
+Đặt `SKYGO_REVIEW_ENCRYPTION_KEY` là Base64 của **32 byte ngẫu nhiên**, và tùy chọn
+`SKYGO_REVIEW_KEY_ID` (mặc định v1, 1–64 ký tự chữ/số/gạch nối/gạch dưới).
+Ví dụ tạo khóa cho môi trường local trong PowerShell, không in khóa ra terminal:
+
+```powershell
+$reviewKeyBytes = [byte[]]::new(32)
+$reviewRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$reviewRng.GetBytes($reviewKeyBytes)
+$reviewRng.Dispose()
+$env:SKYGO_REVIEW_ENCRYPTION_KEY = [Convert]::ToBase64String($reviewKeyBytes)
+$env:SKYGO_REVIEW_KEY_ID = 'local-v1'
+# Khởi động backend từ chính terminal này để kế thừa biến môi trường.
+.\mvnw.cmd spring-boot:run
+```
+
+Giữ khóa trong cấu hình bí mật bên ngoài database/repository và dùng lại khi restart;
+không tạo khóa mới mỗi lần chạy nếu còn review cần dùng. Hiện hỗ trợ một khóa/key ID
+đang cấu hình; chỉ thay sau khi review cũ đã dùng/hết hạn, hoặc triển khai key ring
+trước khi xoay khóa cần giữ khả năng đọc review cũ.
+
+Chưa có/sai cấu hình khóa: review trả **503 REVIEW_ENCRYPTION_UNAVAILABLE**, không lưu
+review không mã hóa; quote và các chức năng khác vẫn hoạt động. Dữ liệu mã hóa sai
+hoặc context không khớp bị từ chối với `REVIEW_INVALID`. Không có endpoint công khai
+giải mã; bước tạo đơn phải kiểm tra quyền/phiên/hạn trước khi đọc snapshot.
+
+Lỗi bổ sung của hai API: 401 UNAUTHENTICATED, 404 SEAT_HOLD_NOT_FOUND,
+409 HOLD_MISMATCH / SEAT_HOLD_EXPIRED / HOLD_ATTACHED_TO_BOOKING / FLIGHT_UNAVAILABLE,
+422 VALIDATION_ERROR / PASSENGER_AGE_MISMATCH. Chi tiết lỗi không chứa dữ liệu đã nhập.
+Kiểm thử integration dùng khóa riêng cố định chỉ trong test, không dùng khóa này để
+chạy ứng dụng. Các bài test bao phủ giá, policy thiếu, quyền sở hữu, hold hết hạn,
+ghế cuối đã giữ, validate hành khách, logout, ciphertext bất biến và phát hiện sửa/tráo payload.

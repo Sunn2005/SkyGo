@@ -10,7 +10,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
 @Order(-2)
-@RestControllerAdvice(assignableTypes = {SeatHoldController.class, BookingPaymentController.class})
+@RestControllerAdvice(assignableTypes = {SeatHoldController.class, BookingPaymentController.class,
+    BookingQuoteController.class, BookingReviewController.class})
 public class BookingExceptionHandler {
   public record Detail(String field, String code, String message) {}
   public record Error(String code, String message, List<Detail> details, String requestId,

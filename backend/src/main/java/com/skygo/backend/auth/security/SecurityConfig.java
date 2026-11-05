@@ -33,6 +33,11 @@ public class SecurityConfig {
                         "/api/v1/auth/register",
                         "/api/v1/auth/login")
                     .permitAll()
+                    .requestMatchers(
+                        org.springframework.http.HttpMethod.GET, "/api/v1/home", "/airports/**")
+                    .permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.HEAD, "/airports/**")
+                    .permitAll()
                     .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR)
                     .permitAll()
                     .anyRequest()

@@ -2,6 +2,7 @@ package com.skygo.backend.booking.repository;
 
 import com.skygo.backend.booking.exception.BookingException;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import static com.skygo.backend.booking.repository.SeatHoldRepository.*;
@@ -10,6 +11,20 @@ import static com.skygo.backend.booking.repository.SeatHoldRepository.*;
 public class BookingReviewRepository {
   private final JdbcTemplate jdbc;
   public BookingReviewRepository(JdbcTemplate jdbc) { this.jdbc=jdbc; }
+  public record StoredReview(String publicId,long holdId,int schemaVersion,Instant expiresAt,
+      boolean used,boolean invalidated,byte[] ciphertext) {
+    @Override public String toString() { return "StoredReview[redacted]"; }
+  }
+  public Optional<StoredReview> owned(String id,long user,long session) {
+    return jdbc.query("""
+        SELECT public_id,seat_hold_id,snapshot_schema_version,expires_at_utc,used_at_utc,
+          invalidated_at_utc,snapshot_ciphertext FROM booking_review
+        WHERE public_id=? AND user_id=? AND session_id=? LOCK IN SHARE MODE
+        """,(rs,n)->new StoredReview(rs.getString("public_id"),rs.getLong("seat_hold_id"),
+            rs.getInt("snapshot_schema_version"),instant(rs,"expires_at_utc"),
+            rs.getObject("used_at_utc")!=null,rs.getObject("invalidated_at_utc")!=null,
+            rs.getBytes("snapshot_ciphertext")),id,user,session).stream().findFirst();
+  }
   public void requireSession(long user,long session,Instant now) {
     var live=jdbc.query("""
         SELECT expires_at_utc,revoked_at_utc FROM auth_session

@@ -460,3 +460,97 @@ Lỗi bổ sung của hai API: 401 UNAUTHENTICATED, 404 SEAT_HOLD_NOT_FOUND,
 Kiểm thử integration dùng khóa riêng cố định chỉ trong test, không dùng khóa này để
 chạy ứng dụng. Các bài test bao phủ giá, policy thiếu, quyền sở hữu, hold hết hạn,
 ghế cuối đã giữ, validate hành khách, logout, ciphertext bất biến và phát hiện sửa/tráo payload.
+
+## Màn thêm hành lý
+
+Khi nhấn **Thêm hành lý** từ review, gọi:
+
+```http
+GET /api/v1/booking-reviews/{reviewId}/baggage-options
+Authorization: Bearer <token>
+```
+
+Dùng `reviewId` vừa nhận từ `POST /api/v1/booking-reviews` và token của **cùng phiên
+đăng nhập đã tạo review**. Không có request body. Trả **200 OK**, `Cache-Control: no-store`.
+Response không lặp lại `reviewId`, nhưng giữ `passengerCounts` để hiển thị tóm tắt.
+Ví dụ một người lớn, một chiều; mã sân bay/ngày/hạn dưới đây chỉ minh họa:
+
+```json
+{
+  "data": {
+    "expiresAt": "2026-11-18T00:15:00Z",
+    "currency": "VND",
+    "passengerCounts": {"adults": 1, "children": 0, "infants": 0},
+    "passengers": [
+      {"clientPassengerId": "p1", "fullName": "Nguyen An", "passengerType": "ADULT"}
+    ],
+    "legs": [{
+      "direction": "OUTBOUND",
+      "originCode": "SGN",
+      "destinationCode": "HAN",
+      "departureDate": "2026-11-19",
+      "cabinClass": "ECONOMY",
+      "checkedBaggagePolicy": {
+        "pieceMaxKg": 23,
+        "maxLinearDimensionsCm": 158,
+        "maxExtraPiecesPerPassenger": 2,
+        "extraPiecePriceExclVat": 325000
+      },
+      "passengerBaggage": [{
+        "clientPassengerId": "p1",
+        "included": {
+          "carryOnMaxKg": 7,
+          "checkedPieces": 1,
+          "strollerPieces": 0,
+          "strollerMaxKg": 0
+        },
+        "canPurchaseExtra": true,
+        "selectedExtraPieces": 0,
+        "extraAmountExclVat": 0
+      }]
+    }],
+    "totalBaggageAmountExclVat": 0
+  }
+}
+```
+
+- Danh sách `passengers` có đầy đủ ADULT/CHILD/INFANT; `fullName` ghép họ rồi tên đệm/tên
+  đã chuẩn hóa. Không trả ngày sinh, giới tính, giấy tờ, email, số điện thoại, ciphertext,
+  ID nội bộ hoặc các dòng giá vé cho màn này.
+- `legs` sắp OUTBOUND rồi RETURN. Mỗi chiều có hạng vé, ngày bay theo múi giờ sân bay
+  đi và miễn cước riêng cho từng người. Hành trình/miễn cước lấy từ snapshot review đã
+  xác nhận, không thay bằng danh mục hiện tại hoặc tính lại tiền vé khi mở màn hình.
+- Chính sách ký gửi lấy theo FK từ `fare_benefit_policy` tới `checked_baggage_policy`
+  của từng fare/nhóm khách được chọn. Kiểm tra hiệu lực, tiền tệ, giới hạn và sự thống
+  nhất chính sách giữa các nhóm trên một chiều; thiếu/sai cấu hình trả lỗi, không ngầm
+  dùng giá 0 hoặc mặc định. GET không cập nhật snapshot hay chốt giá mua thêm.
+- Một kiện ký gửi (miễn cước hoặc mua thêm) cùng giới hạn 23 kg, tổng dài + rộng + cao
+  158 cm. ADULT/CHILD được mua thêm tối đa 2 kiện/người/chiều ngoài miễn cước;
+  INFANT có `canPurchaseExtra=false`, không hiển thị bộ chọn mua riêng.
+- Mọi trường có hậu tố `ExclVat` là **chưa VAT**. Frontend tính tạm thành tiền bằng
+  số kiện × đơn giá, cộng các người/chiều. VAT 10% tính chung với tiền vé khi lưu
+  lựa chọn và tạo review mới ở bước tiếp theo. UI ghi rõ "Chưa gồm VAT".
+- Review hiện tại dùng snapshot schema 1 chỉ có miễn cước, nên số kiện/thành tiền mua
+  thêm và tổng hành lý ban đầu bằng 0. API lưu hành lý và snapshot schema 2 sẽ triển
+  khai riêng; chưa thể lưu hoặc mở lại lựa chọn mua thêm qua API hiện tại.
+- Chỉ cho đọc review còn hiệu lực của đúng tài khoản/phiên, chưa dùng và hold còn
+  ACTIVE chưa gắn đơn. GET không tạo/vô hiệu review mới, không giữ thêm ghế, không
+  gia hạn. Khi hold thực sự hết hạn, cơ chế expiry chung vẫn trả ghế đúng một lần.
+
+Lỗi dùng envelope booking hiện có, không trả kèm dữ liệu hành khách:
+
+| HTTP | `error.code` | Trường hợp |
+|---|---|---|
+| 401 | `UNAUTHENTICATED` | Thiếu token, phiên đã hết hạn/đăng xuất |
+| 404 | `REVIEW_NOT_FOUND` | ID không tồn tại hoặc review thuộc tài khoản/phiên khác |
+| 409 | `SEAT_HOLD_EXPIRED` | Giữ chỗ đã hết hạn/không còn ACTIVE |
+| 409 | `REVIEW_EXPIRED` | Review hết hạn trong khi hold còn ACTIVE |
+| 409 | `REVIEW_ALREADY_USED` | Review đã dùng hoặc hold đã gắn đơn |
+| 409 | `REVIEW_INVALID` | Review bị thay thế/vô hiệu, payload bị xóa/sai xác thực, schema chưa hỗ trợ hoặc snapshot không khớp |
+| 409 | `PRICING_UNAVAILABLE` | Chính sách ký gửi thiếu, hết/chưa hiệu lực hoặc không nhất quán |
+| 503 | `REVIEW_ENCRYPTION_UNAVAILABLE` | Thiếu/sai cấu hình khóa mã hóa review |
+
+`BookingBaggageIntegrationTest` dùng MariaDB kiểm thử, bao phủ nhiều nhóm khách,
+khứ hồi khác hạng, ngày bay địa phương, dữ liệu snapshot bất biến, quyền/phiên,
+review không còn dùng được, policy lỗi và expiry trong lúc đọc policy. Không cần
+migration mới ngoài V4 cho API GET này.

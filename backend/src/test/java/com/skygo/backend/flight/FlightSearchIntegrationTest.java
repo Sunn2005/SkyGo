@@ -23,7 +23,8 @@ import org.springframework.web.context.WebApplicationContext;
 @SpringBootTest(properties = {
     "spring.datasource.url=${SKYGO_TEST_DB_URL}",
     "spring.datasource.username=${SKYGO_TEST_DB_USERNAME:root}",
-    "spring.datasource.password=${SKYGO_TEST_DB_PASSWORD:}"
+    "spring.datasource.password=${SKYGO_TEST_DB_PASSWORD:}",
+    "skygo.seat-hold.cleanup-enabled=false"
 })
 @Transactional
 class FlightSearchIntegrationTest {

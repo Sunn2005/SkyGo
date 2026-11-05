@@ -30,6 +30,11 @@ Khi thay schema, thêm migration mới (V3, V4...); giữ nguyên migration đã
 | GET /api/v1/regions | Danh sách nhóm khu vực có sân bay đang hoạt động, không cần đăng nhập |
 | GET /api/v1/airports | Tra cứu sân bay để chọn điểm đi/đến, không cần đăng nhập |
 | POST /api/v1/flights/search | Tìm chuyến một chiều hoặc từng chiều khứ hồi, không cần đăng nhập |
+| POST /api/v1/seat-holds | Giữ chuyến/hạng chiều đi trong 15 phút; cần Bearer token |
+| GET /api/v1/seat-holds/current | Lượt giữ chỗ còn hiệu lực của tài khoản, hoặc data: null |
+| PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
+| PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
+| POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 
 ### API chọn điểm đi và điểm đến
 
@@ -161,3 +166,135 @@ thật trong database; lịch mẫu V2 tính từ ngày migration chạy. Không
 vào ngày minh họa là kết quả hợp lệ. Kiểm thử `FlightSearchServiceTest` dùng clock cố định;
 `FlightSearchIntegrationTest` chạy HTTP qua MockMvc và MariaDB test khi có
 `SKYGO_TEST_DB_URL`, fixture được rollback sau mỗi test.
+
+### API giữ chỗ và tiếp tục thanh toán
+
+Mọi API dưới đây cần `Authorization: Bearer <accessToken>`. Chủ tài khoản lấy từ token.
+Sử dụng `flightId` và `cabinClass` từ kết quả tìm kiếm; backend đọc lại chuyến/hạng,
+trạng thái bán và tồn ghế. Một tài khoản chỉ có một hold ACTIVE chưa hết hạn.
+
+Tạo hold: `POST /api/v1/seat-holds`, trả **201 Created**:
+
+```json
+{
+  "tripType": "ROUND_TRIP",
+  "passengerCounts": {"adults": 1, "children": 1, "infants": 0},
+  "selection": {
+    "direction": "OUTBOUND",
+    "flightId": "flight-public-id-from-search",
+    "cabinClass": "ECONOMY"
+  }
+}
+```
+
+`tripType` là `ONE_WAY` hoặc `ROUND_TRIP`. Tạo mới bắt đầu bằng `OUTBOUND`.
+Giữ `adults + children` ghế; em bé không chiếm ghế. Hold có hiệu lực khi giờ server
+**nhỏ hơn** `expiresAt`, hết hạn sau đúng 15 phút từ lần giữ đầu tiên.
+Không yêu cầu số ghế còn bán phải đủ thêm lần nữa để đọc/tiếp tục lựa chọn đã giữ.
+
+`GET /api/v1/seat-holds/current` trả 200, `data: null` khi không có hold còn hiệu lực,
+hoặc object như sau (giá trị chỉ minh họa):
+
+```json
+{
+  "data": {
+    "seatHoldId": "hold-public-id",
+    "status": "ACTIVE",
+    "tripType": "ROUND_TRIP",
+    "passengerCounts": {"adults": 1, "children": 1, "infants": 0},
+    "expiresAt": "2026-11-18T03:15:00Z",
+    "legs": [{
+      "direction": "OUTBOUND",
+      "flightId": "flight-public-id-from-search",
+      "cabinClass": "ECONOMY",
+      "origin": {"code": "SGN", "city": "TP. Hồ Chí Minh"},
+      "destination": {"code": "HAN", "city": "Hà Nội"},
+      "departureAt": "2026-11-18T10:30:00+07:00",
+      "arrivalAt": "2026-11-18T12:35:00+07:00"
+    }],
+    "bookingId": null
+  }
+}
+```
+
+Tạo/sửa hold cũng trả schema này. UI dùng thời hạn để đếm ngược và thông tin chiều
+bay để khôi phục màn hình; server vẫn là nơi quyết định hold còn hiệu lực.
+Hold không cố định tổng giá đơn. Giá và quyền lợi được kiểm tra ở bước review/tạo đơn.
+
+Thêm hoặc đổi chiều bay: `PUT /api/v1/seat-holds/{seatHoldId}/legs/RETURN` (hoặc
+`OUTBOUND`), trả 200:
+
+```json
+{"flightId": "return-flight-public-id-from-search", "cabinClass": "BUSINESS"}
+```
+
+Chiều về chỉ dùng cho khứ hồi, đảo tuyến chiều đi, ngày khởi hành địa phương sau
+ngày chiều đi. Hai chiều có thể khác hạng. Gọi lại cùng lựa chọn không trừ ghế thêm;
+đổi lựa chọn trả ghế cũ và giữ ghế mới trong một transaction, thiếu chỗ thì giữ nguyên
+lựa chọn cũ. Trước khi đổi chiều đi khi đã có chiều về, cặp mới vẫn phải hợp lệ.
+
+Sửa số khách: `PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts`, trả 200:
+
+```json
+{"adults": 2, "children": 0, "infants": 1}
+```
+
+Các số phải là số nguyên JSON, người lớn >=1, trẻ em/em bé >=0. Điều chỉnh ghế cho
+tất cả các chiều trong một transaction, thiếu chỗ ở một chiều thì rollback toàn bộ.
+Sửa lựa chọn/số khách không gia hạn và vô hiệu review chưa dùng. Hold đã gắn đơn
+không sửa được. Đăng xuất không hủy hold; người dùng có thể đăng nhập lại và GET current.
+
+Tiếp tục đơn hết hạn: `POST /api/v1/bookings/{bookingId}/resume-payment`, không có body,
+chỉ gọi khi người dùng nhấn **Tiếp tục thanh toán**. Trả 200:
+
+```json
+{
+  "data": {
+    "bookingId": "booking-public-id",
+    "bookingStatus": "PENDING_PAYMENT",
+    "paymentStatus": "PENDING",
+    "seatHoldId": "new-hold-public-id",
+    "holdExpiresAt": "2026-11-18T03:35:00Z",
+    "totalAmount": 2200000,
+    "currency": "VND"
+  }
+}
+```
+
+Backend kiểm tra lại chuyến/hạng còn bán, chưa khởi hành và đủ chỗ ở mọi chiều,
+giữ lại nguyên tử, tạo hold mới 15 phút liên kết cùng đơn. Giữ nguyên ID/mã đơn,
+review, hành khách, hành trình, snapshot giá và payment hiện có. Nếu cùng đơn đã có
+hold còn hạn thì trả hold đó, không gia hạn. Nếu thiếu chỗ ở bất kỳ chiều nào,
+không trừ ghế ở chiều nào và giữ đơn EXPIRED; UI thông báo để khách chọn chuyến khác.
+API này hoạt động với đơn đã lưu; kiểm thử dùng đơn fixture vì API tạo đơn thật
+thuộc bước triển khai kế tiếp.
+
+Các mã lỗi:
+
+| HTTP | Code | UI xử lý |
+| --- | --- | --- |
+| 401 | UNAUTHENTICATED | Đăng nhập |
+| 422 | VALIDATION_ERROR | Sửa đầu vào |
+| 404 | SEAT_HOLD_NOT_FOUND / BOOKING_NOT_FOUND | Không tìm thấy hoặc không thuộc tài khoản |
+| 409 | ACTIVE_HOLD_EXISTS | Đọc GET current; error.activeSeatHoldId và error.bookingId chỉ lượt đang giữ |
+| 409 | INSUFFICIENT_CAPACITY | Không đủ ghế, chọn chuyến/hạng khác |
+| 409 | FLIGHT_UNAVAILABLE | Chuyến/hạng không còn bán hoặc đã khởi hành |
+| 409 | SEAT_HOLD_EXPIRED | Chọn lại chuyến; ghế hết hạn đã được trả |
+| 409 | HOLD_ATTACHED_TO_BOOKING | Tiếp tục đơn đã tạo, không sửa hold |
+| 409 | BOOKING_ALREADY_PAID | Đơn đã thanh toán |
+| 409 | BOOKING_NOT_RESUMABLE / HOLD_MISMATCH | Đơn không có trạng thái/hành trình hợp lệ để giữ lại |
+
+Khi hết hạn, hold chuyển EXPIRED, trả ghế từng chiều đúng một lần và vô hiệu review
+chưa dùng. Đơn/payment đang chờ chuyển EXPIRED. Các hold CONSUMED không trả ghế.
+Thu hồi chạy trước khi tìm/giữ chỗ và qua tác vụ nền; không phụ thuộc hoàn toàn vào
+tác vụ nền. Mỗi hold được thu hồi trong transaction riêng theo thứ tự khóa tài khoản,
+hold, booking/payment rồi fare tăng dần. Mutation cũng dùng cùng thứ tự khóa và các
+cập nhật tồn có điều kiện để không bán vượt chỗ. Expiry vẫn được commit khi request
+trả lỗi hết hạn. Tìm kiếm mở transaction đọc tồn sau khi thu hồi hoàn tất.
+
+Cấu hình `skygo.seat-hold.cleanup-enabled` (mặc định true), `cleanup-delay-ms`
+(30000) và `cleanup-batch-size` (100) đặt trong application.properties. Mốc 15 phút
+là quy tắc nghiệp vụ cố định. Kiểm thử giữ chỗ/resume/concurrency dùng MariaDB test
+qua `SKYGO_TEST_DB_URL`, tắt scheduler và clock cố định. Fixture được commit để kiểm
+tra các transaction đồng thời, rồi xóa trong teardown; chỉ chạy trên database test riêng.
+

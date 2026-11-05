@@ -85,9 +85,9 @@ abstract class PricingFixture extends BookingFixture {
       boolean infant=type==PassengerType.INFANT,business=fare==businessFare;
       jdbc.update("""
           INSERT INTO fare_benefit_policy(flight_fare_id,passenger_type,carry_on_max_kg,checked_pieces,
-            checked_piece_max_kg,included_meals_per_leg,seat_type,stroller_pieces,stroller_max_kg)
-          VALUES(?,?,?,?,?,?,?,?,?)
-          """,fare,type.name(),infant?3:business?15:7,infant?0:business?2:1,infant?0:23,
+            checked_baggage_policy_id,included_meals_per_leg,seat_type,stroller_pieces,stroller_max_kg)
+          VALUES(?,?,?,?,(SELECT id FROM checked_baggage_policy WHERE version=1),?,?,?,?)
+          """,fare,type.name(),infant?3:business?15:7,infant?0:business?2:1,
           !infant&&business?1:0,infant?null:business?"BUSINESS":"STANDARD",infant?1:0,infant?15:0);
     }
   }

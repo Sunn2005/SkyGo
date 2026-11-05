@@ -52,7 +52,12 @@ public class BookingPricingRepository {
         (rs,n)->rs.getBigDecimal("multiplier"),scope,type.name()).stream().findFirst();
   }
   public Optional<Benefit> benefit(long fare,PassengerType type) {
-    return jdbc.query("SELECT * FROM fare_benefit_policy WHERE flight_fare_id=? AND passenger_type=? LOCK IN SHARE MODE",
+    return jdbc.query("""
+        SELECT b.*, CASE WHEN b.checked_pieces = 0 THEN 0 ELSE p.piece_max_kg END AS checked_piece_max_kg
+        FROM fare_benefit_policy b
+        JOIN checked_baggage_policy p ON p.id=b.checked_baggage_policy_id
+        WHERE b.flight_fare_id=? AND b.passenger_type=? LOCK IN SHARE MODE
+        """,
         (rs,n)->new Benefit(type,rs.getInt("carry_on_max_kg"),rs.getInt("checked_pieces"),
             rs.getInt("checked_piece_max_kg"),rs.getInt("included_meals_per_leg"),rs.getString("seat_type"),
             rs.getInt("stroller_pieces"),rs.getInt("stroller_max_kg")),fare,type.name()).stream().findFirst();

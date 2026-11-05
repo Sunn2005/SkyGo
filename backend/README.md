@@ -18,7 +18,36 @@ Flyway V2 nạp danh mục hệ thống: 24 sân bay thực tế thuộc 11 nhó
 
 Flyway V3 thêm `airport.cover_image_path` và gán ảnh phong cảnh cho 24 sân bay mẫu. Ảnh nằm tại `src/main/resources/static/airports/{IATA}.jpg`, được trả công khai ở `/airports/{IATA}.jpg`. Nguồn ảnh và giấy phép được ghi trong `AIRPORT_IMAGE_SOURCES.md`. Sân bay bổ sung sau này có thể để `cover_image_path` là `NULL` cho đến khi có ảnh.
 
-Khi thay schema, thêm migration mới (V3, V4...); giữ nguyên migration đã áp dụng. `clean` của Flyway được tắt.
+Flyway V4 thêm `checked_baggage_policy`, gắn mọi `fare_benefit_policy` với policy
+phiên bản 1 và bỏ cột cấu hình `fare_benefit_policy.checked_piece_max_kg`.
+Định nghĩa chung của một kiện ký gửi (miễn cước hoặc mua thêm) là một túi/vali tối đa
+23 kg, tổng dài + rộng + cao tối đa 158 cm. Mua thêm tối đa 2 kiện/người/chiều,
+đơn giá **325000 VND/kiện chưa VAT**; chỉ ADULT/CHILD được mua, INFANT không mua riêng.
+Phổ thông/Thương gia vẫn miễn cước lần lượt 1/2 kiện cho ADULT/CHILD.
+
+`booking_passenger_benefit` giữ cân nặng snapshot, thêm FK policy, kích thước,
+số kiện mua thêm, đơn giá chưa VAT và thành tiền theo người/chiều.
+`booking.extra_baggage_amount` mặc định 0; CHECK tổng tiền mới là
+`total_amount = fare_subtotal + extra_baggage_amount + vat_amount`.
+Backend tính `vat_amount = round_half_up((fare_subtotal + extra_baggage_amount) * 0.10)`
+một lần cho toàn đơn. V4 không tính lại tiền, thay quyền lợi hay sửa ciphertext
+của đơn/review cũ; policy/kích thước của snapshot lịch sử để NULL vì trước đây chưa lưu.
+Sau V4 có 22 bảng nghiệp vụ và bảng lịch sử Flyway.
+
+Triển khai V4 cùng bản code đọc policy mới; không chạy lại V1–V3 hoặc sửa checksum.
+Khởi động backend sẽ áp dụng V4 qua Flyway. API lấy/lưu hành lý và snapshot schema 2
+sẽ được triển khai riêng; API review hiện tại vẫn dùng schema 1 và chưa nhận mua thêm.
+Chính sách đã được tham chiếu cần giữ nguyên nội dung; khi thay cấu hình tạo version mới,
+kiểm tra khoảng hiệu lực và gán policy tương ứng bằng backend/quy trình quản trị.
+
+`CheckedBaggageMigrationIntegrationTest` tạo database tạm tên
+`skygo_baggage_migration_test_<uuid>` trên server kiểm thử, chạy V1–V3, nạp dữ liệu
+lịch sử rồi nâng lên V4 để kiểm tra dữ liệu và ràng buộc. Tài khoản kiểm thử cần quyền
+CREATE/DROP database tạm; test chỉ xóa đúng database tên UUID do nó tự tạo.
+Các integration test khác tiếp tục dùng `SKYGO_TEST_DB_URL` và fixture riêng.
+
+Khi thay schema tiếp, thêm migration mới (V5...); giữ nguyên migration đã áp dụng.
+`clean` của Flyway được tắt. Fixture `database/home-demo-seed.sql` yêu cầu schema V4.
 
 | Endpoint | Kết quả |
 | --- | --- |

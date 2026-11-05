@@ -1,4 +1,4 @@
--- Development fixture for the home screen. Run after Flyway V2 on `skygo`.
+-- Development fixture for the home screen. Run after Flyway V4 on `skygo`.
 -- It uses the only existing app_user and never changes that account or its password.
 -- Re-running after a successful run does nothing. Do not run skygo-demo.sql with Flyway.
 -- The six paid bookings are synthetic, solely to exercise route rankings and the
@@ -16,6 +16,7 @@ BEGIN
     DECLARE v_contact_phone VARCHAR(16);
     DECLARE v_session_id BIGINT UNSIGNED;
     DECLARE v_policy_id BIGINT UNSIGNED;
+    DECLARE v_baggage_policy_id BIGINT UNSIGNED;
     DECLARE v_sgn BIGINT UNSIGNED;
     DECLARE v_han BIGINT UNSIGNED;
     DECLARE v_dad BIGINT UNSIGNED;
@@ -76,6 +77,7 @@ BEGIN
            vat_rate, effective_from_utc)
         VALUES (1, 250000, 2600, 2.5, 0.1, UTC_TIMESTAMP(6) - INTERVAL 1 DAY);
         SELECT id INTO v_policy_id FROM pricing_policy WHERE version = 1;
+        SELECT id INTO v_baggage_policy_id FROM checked_baggage_policy WHERE version = 1;
         IF NOT EXISTS (
             SELECT 1 FROM pricing_policy
              WHERE id = v_policy_id AND economy_fixed_vnd = 250000
@@ -142,15 +144,15 @@ BEGIN
 
             INSERT INTO fare_benefit_policy
               (flight_fare_id, passenger_type, carry_on_max_kg, checked_pieces,
-               checked_piece_max_kg, included_meals_per_leg, seat_type,
+               checked_baggage_policy_id, included_meals_per_leg, seat_type,
                stroller_pieces, stroller_max_kg)
             VALUES
-              (v_fare_id, 'ADULT', 7, 1, 23, 0, 'STANDARD', 0, 0),
-              (v_fare_id, 'CHILD', 7, 1, 23, 0, 'STANDARD', 0, 0),
-              (v_fare_id, 'INFANT', 3, 0, 0, 0, NULL, 1, 15),
-              (v_business_fare_id, 'ADULT', 15, 2, 23, 1, 'BUSINESS', 0, 0),
-              (v_business_fare_id, 'CHILD', 15, 2, 23, 1, 'BUSINESS', 0, 0),
-              (v_business_fare_id, 'INFANT', 3, 0, 0, 0, NULL, 1, 15);
+              (v_fare_id, 'ADULT', 7, 1, v_baggage_policy_id, 0, 'STANDARD', 0, 0),
+              (v_fare_id, 'CHILD', 7, 1, v_baggage_policy_id, 0, 'STANDARD', 0, 0),
+              (v_fare_id, 'INFANT', 3, 0, v_baggage_policy_id, 0, NULL, 1, 15),
+              (v_business_fare_id, 'ADULT', 15, 2, v_baggage_policy_id, 1, 'BUSINESS', 0, 0),
+              (v_business_fare_id, 'CHILD', 15, 2, v_baggage_policy_id, 1, 'BUSINESS', 0, 0),
+              (v_business_fare_id, 'INFANT', 3, 0, v_baggage_policy_id, 0, NULL, 1, 15);
 
             INSERT INTO seat_hold
               (public_id, user_id, trip_type, adults, children, infants, status,
@@ -223,9 +225,11 @@ BEGIN
             VALUES (v_booking_id, v_leg_id, 'ADULT', 1, v_base_fare, v_base_fare);
             INSERT INTO booking_passenger_benefit
               (booking_id, booking_passenger_id, booking_leg_id, carry_on_max_kg,
-               checked_pieces, checked_piece_max_kg, included_meals_per_leg,
+               checked_pieces, checked_piece_max_kg, checked_baggage_policy_id,
+               checked_piece_max_linear_cm, included_meals_per_leg,
                seat_type, stroller_pieces, stroller_max_kg)
-            VALUES (v_booking_id, v_passenger_id, v_leg_id, 7, 1, 23, 0, 'STANDARD', 0, 0);
+            VALUES (v_booking_id, v_passenger_id, v_leg_id, 7, 1, 23,
+                    v_baggage_policy_id, 158, 0, 'STANDARD', 0, 0);
 
             INSERT INTO payment
               (public_id, booking_id, method, status, amount, transaction_code,

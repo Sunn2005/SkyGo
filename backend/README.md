@@ -27,6 +27,45 @@ Khi thay schema, thêm migration mới (V3, V4...); giữ nguyên migration đã
 | GET /api/v1/auth/me | Tài khoản của Bearer token hiện tại |
 | POST /api/v1/auth/logout | 204, thu hồi phiên và vô hiệu review chưa dùng |
 | GET /api/v1/home | Trang chủ công khai; nếu có Bearer token hợp lệ thì thêm chuyến đã xác nhận sắp tới |
+| GET /api/v1/regions | Danh sách nhóm khu vực có sân bay đang hoạt động, không cần đăng nhập |
+| GET /api/v1/airports | Tra cứu sân bay để chọn điểm đi/đến, không cần đăng nhập |
+
+### API chọn điểm đi và điểm đến
+
+`GET /api/v1/regions` trả `data: [{regionCode, regionName, sortOrder}]`, sắp theo
+`sortOrder` rồi `regionCode`. Nhóm là `region_code` đang lưu trong database (ví dụ
+`VIETNAM`, `SOUTHEAST_ASIA`), không gộp thành châu lục.
+
+Khi mở một nhóm, gọi `GET /api/v1/airports?regionCode=VIETNAM`. Khi chọn điểm đến,
+thêm điểm đi: `GET /api/v1/airports?regionCode=VIETNAM&origin=SGN`.
+`origin` chỉ lọc sân bay có tuyến trực tiếp đang hoạt động và chuyến tương lai đang
+bán; chưa kiểm tra ngày tìm kiếm hoặc số ghế. Không có điểm đến phù hợp trả `data: []`.
+FE thu gọn/mở nhóm, ẩn nhóm có kết quả rỗng ở màn điểm đến, và kiểm tra lại điểm đến
+khi đổi điểm đi. Có thể lấy nhiều nhóm trong một lần bằng cách bỏ `regionCode`, rồi
+gom theo `regionCode` trên UI; vẫn phải tải hết các trang.
+
+Các bộ lọc tùy chọn: `keyword` (tên, thành phố hoặc mã sân bay, không phân biệt hoa
+thường và dấu tiếng Việt, tối đa 200 ký tự), `countryCode`, `regionCode`, `origin`.
+Các mã phải đúng chữ hoa như danh mục. Mã không tồn tại/không hoạt động và tham số
+không hợp lệ trả `422 VALIDATION_ERROR` với `details[].field`.
+Phân trang: `page` mặc định 0, `size` mặc định 20 (1–100), sắp theo mã sân bay.
+Response chỉ gồm dữ liệu màn chọn sân bay cần:
+
+```json
+{
+  "data": [
+    {"code":"HAN","name":"Sân bay quốc tế Nội Bài","city":"Hà Nội","countryName":"Việt Nam","regionCode":"VIETNAM"}
+  ],
+  "pagination": {"page":0,"size":20,"totalElements":1,"totalPages":1}
+}
+```
+
+Tên nhóm và thứ tự lấy từ `/regions`; sân bay không trả ID nội bộ, múi giờ hoặc
+trạng thái hoạt động. Đây là response rút gọn theo UI; ví dụ đầy đủ trong
+`api-contract.docx` có thêm trường. Danh mục hiện có 24 sân bay, chưa có CXR.
+Các kiểm thử API sân bay trong `AirportIntegrationTest` chỉ chạy khi có
+`SKYGO_TEST_DB_URL`; fixture được rollback sau mỗi test. Lịch mẫu hết hạn có thể
+khiến danh sách điểm đến rỗng, cần bổ sung lịch qua quy trình vận hành riêng.
 
 Đăng ký yêu cầu fullName, phoneNumber, email hợp lệ, password và confirmPassword. Số di động Việt Nam dạng 0... hoặc +84... được chuẩn hóa về +84. Số điện thoại phải duy nhất; email không cần duy nhất. Mật khẩu ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số, ký tự đặc biệt; tối đa 72 byte UTF-8 theo BCrypt. Không trim mật khẩu. Backend chỉ lưu hash mật khẩu và hash SHA-256 của token ngẫu nhiên 256 bit. Các repository auth dùng JDBC với transaction Spring để kiểm soát khóa hàng login_guard; model là record, không phải JPA entity.
 

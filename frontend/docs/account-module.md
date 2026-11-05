@@ -11,7 +11,7 @@ Chỉ thay đổi frontend. Không gọi API, Supabase hay database. Module này
 Từ trang chủ, nhấn biểu tượng tài khoản ở góc phải hoặc mở `/profile`.
 
 - Tài khoản mẫu: `0912345678` / `SkyGoDemo@2027`, tên Nguyễn Văn An.
-- Nút **Điền tài khoản mẫu** chỉ điền form; nhấn **Đăng nhập** để tiếp tục.
+- Màn đăng nhập theo PDF (trang 7 và 18), có mắt hiện/ẩn mật khẩu và nút tiếp tục không đăng nhập để xem chuyến. Tài khoản mẫu dùng để kiểm thử thủ công, không hiện thẻ điền mẫu trên form.
 - Đăng ký một số khác rồi đăng nhập bằng mật khẩu vừa nhập; họ tên và email chưa được cung cấp ở bước đăng ký.
 - Mật khẩu tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt. Không trim mật khẩu. Màn đăng ký hiển thị 3 tiêu chí cập nhật ngay khi nhập: đủ 8 ký tự, có chữ hoa và thường, có số và ký tự đặc biệt; tiêu chí đạt hiện tích xanh.
 - Để trống trường bắt buộc, số điện thoại sai, xác nhận mật khẩu sai và số đã đăng ký đều có thông báo; lỗi không xóa nội dung form.

@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Stack } from "expo-router/stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
-import { Screen } from "@/shared/components/screen";
 import { Field } from "@/shared/components/fields";
-import { Button, Card, Label, Notice, Tap } from "@/shared/components/ui";
+import { Button, Icon, Label, Notice, Tap } from "@/shared/components/ui";
 import { colors } from "@/shared/theme";
 import { PasswordField } from "../components/password-field";
 import { useAccount } from "../context/account-context";
-import { demoAccount } from "../data/mock-account-service";
 import { AccountError, type RegisterInput } from "../types";
 import { normalizePhone, validateLogin } from "../utils/validation";
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const {
     phoneNumber: registeredPhone,
     registered,
@@ -99,101 +100,153 @@ export default function LoginScreen() {
   };
 
   return (
-    <Screen title="Đăng nhập">
-      <Label size={28} weight="bold">
-        Chào mừng trở lại.
-      </Label>
-      <Label muted>Đăng nhập để bắt đầu hành trình cùng SkyGo.</Label>
-      {!!returnTo && (
-        <Notice>Đăng nhập để tiếp tục đặt vé hoặc xem đặt chỗ của bạn.</Notice>
-      )}
-      {registered === "1" && (
-        <Notice>
-          Đăng ký thành công. Đăng nhập bằng số điện thoại của bạn để tiếp tục.
-        </Notice>
-      )}
-      <Field
-        label="Số điện thoại"
-        value={phoneNumber}
-        onChangeText={(value) => {
-          setPhoneNumber(value);
-          setError("");
-          setFields({});
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#EEEEEE" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top + 12,
+          paddingBottom: Math.max(insets.bottom, 24),
+          paddingHorizontal: 24,
         }}
-        keyboardType="phone-pad"
-        autoComplete="tel"
-        placeholder="0912 345 678"
-        editable={!busy}
-        error={fields.phoneNumber}
-      />
-      <PasswordField
-        label="Mật khẩu"
-        value={password}
-        onChangeText={(value) => {
-          setPassword(value);
-          setError("");
-          setFields((current) => ({ ...current, password: undefined }));
-        }}
-        autoComplete="current-password"
-        textContentType="password"
-        editable={!busy}
-        error={fields.password}
-        returnKeyType="go"
-        onSubmitEditing={() => void submit()}
-      />
-      {remaining > 0 ? (
-        <Notice error>
-          Đăng nhập tạm khóa. Thử lại sau {Math.floor(remaining / 60)} phút{" "}
-          {remaining % 60} giây, hoặc dùng số điện thoại khác.
-        </Notice>
-      ) : (
-        !!error && <Notice error>{error}</Notice>
-      )}
-      <View style={{ minHeight: 54 }}>
-        <Button
-          title="Đăng nhập"
-          loading={busy}
-          disabled={remaining > 0}
-          onPress={() => void submit()}
-        />
-      </View>
-      <Tap
-        onPress={() =>
-          router.replace({ pathname: "/register", params: { returnTo } })
-        }
-        disabled={busy}
       >
-        <Label style={{ textAlign: "center" }}>
-          Chưa có tài khoản?{" "}
-          <Label color={colors.primary} weight="semibold">
-            Đăng ký
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Tap
+            label="Quay lại"
+            disabled={busy}
+            style={{ width: 32 }}
+            onPress={() =>
+              router.canGoBack() ? router.back() : router.replace("/")
+            }
+          >
+            <Icon name="6-6734-imgArrowLeft" size={20} />
+          </Tap>
+          <Label size={18} weight="semibold" style={{ flex: 1 }}>
+            SkyGo
           </Label>
-        </Label>
-      </Tap>
-      <Card style={{ backgroundColor: colors.surface }}>
-        <Label weight="semibold">Trải nghiệm bằng tài khoản mẫu</Label>
-        <Label selectable size={13} muted>
-          SĐT: {demoAccount.phoneNumber}
-          {"\n"}Mật khẩu: {demoAccount.password}
-        </Label>
-        <Tap
-          disabled={busy}
-          onPress={() => {
-            setPhoneNumber(demoAccount.phoneNumber);
-            setPassword(demoAccount.password);
-            setError("");
-            setFields({});
-          }}
-        >
-          <Label color={colors.primary} weight="semibold">
-            Điền tài khoản mẫu
+          <Tap label="Trợ giúp" onPress={() => router.push("/help")}>
+            <Icon name="6-6816-imgCircleHelp" size={20} />
+          </Tap>
+        </View>
+        <View style={{ marginTop: 44, gap: 20 }}>
+          <View style={{ gap: 8 }}>
+            <Label size={28} weight="bold">
+              Chào mừng trở lại
+            </Label>
+            {!!returnTo && (
+              <Label size={12} muted>
+                Đăng nhập để tiếp tục đặt vé hoặc xem đặt chỗ của bạn
+              </Label>
+            )}
+          </View>
+          {registered === "1" && (
+            <Notice>
+              Đăng ký thành công. Đăng nhập bằng số điện thoại của bạn để tiếp
+              tục.
+            </Notice>
+          )}
+          <Field
+            label="Số điện thoại"
+            value={phoneNumber}
+            onChangeText={(value) => {
+              setPhoneNumber(value);
+              setError("");
+              setFields({});
+            }}
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            placeholder="090 123 4567"
+            editable={!busy}
+            error={fields.phoneNumber}
+          />
+          <PasswordField
+            label="Mật khẩu"
+            value={password}
+            onChangeText={(value) => {
+              setPassword(value);
+              setError("");
+              setFields((current) => ({ ...current, password: undefined }));
+            }}
+            autoComplete="current-password"
+            textContentType="password"
+            editable={!busy}
+            error={fields.password}
+            returnKeyType="go"
+            onSubmitEditing={() => void submit()}
+          />
+          <Label size={11} muted style={{ marginTop: -12 }}>
+            Mật khẩu từ 8 ký tự, có hoa, thường, số, ký tự đặc biệt.
           </Label>
-        </Tap>
-      </Card>
-      <Label size={12} muted>
-        Chế độ dữ liệu mẫu. Tài khoản và phiên đăng nhập được đặt lại khi tải
-        lại ứng dụng.
-      </Label>
-    </Screen>
+          {remaining === 0 && !!error && <Notice error>{error}</Notice>}
+          <View style={{ minHeight: 54 }}>
+            <Button
+              title="Đăng nhập"
+              loading={busy}
+              disabled={remaining > 0}
+              onPress={() => void submit()}
+            />
+          </View>
+          {remaining > 0 && (
+            <View
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={{
+                padding: 14,
+                gap: 6,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: "#E9C68C",
+                backgroundColor: "#FFF6E7",
+              }}
+            >
+              <Label size={13} weight="semibold" color="#8A5700">
+                Tài khoản tạm khóa
+              </Label>
+              <Label size={12} color="#8A5700">
+                Thử lại sau{" "}
+                {String(Math.floor(remaining / 60)).padStart(2, "0")}:
+                {String(remaining % 60).padStart(2, "0")}
+              </Label>
+            </View>
+          )}
+          <Tap
+            onPress={() =>
+              router.replace({ pathname: "/register", params: { returnTo } })
+            }
+            disabled={busy}
+          >
+            <Label
+              size={13}
+              color={colors.primary}
+              weight="semibold"
+              style={{ textAlign: "center" }}
+            >
+              Chưa có tài khoản? Đăng ký
+            </Label>
+          </Tap>
+          <View style={{ height: 1, backgroundColor: colors.line }} />
+          <Tap
+            label="Tiếp tục không cần đăng nhập"
+            disabled={busy}
+            onPress={() => router.replace("/")}
+            style={{
+              borderWidth: 1,
+              borderColor: colors.primary,
+              borderRadius: 10,
+              minHeight: 48,
+              alignItems: "center",
+            }}
+          >
+            <Label size={13} color={colors.primary} weight="semibold">
+              Tiếp tục không cần đăng nhập
+            </Label>
+          </Tap>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

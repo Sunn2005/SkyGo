@@ -4,6 +4,8 @@ import type { BookingInput, BookingSnapshot } from "../types";
 export function bookingInput(input: BookingInput): BookingInput {
   const s = input.search;
   return {
+    ...(input.reservationId ? { reservationId: input.reservationId } : {}),
+    ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
     search: {
       type: s.type,
       from: s.from,
@@ -11,10 +13,17 @@ export function bookingInput(input: BookingInput): BookingInput {
       date: s.date,
       secondDate: s.secondDate,
       count: s.count,
+      ...(s.children ? { children: s.children } : {}),
+      ...(s.infants ? { infants: s.infants } : {}),
       cabin: s.cabin,
     },
     selected: input.selected,
     travellers: input.travellers.map((p) => ({
+      ...(p.kind ? { kind: p.kind } : {}),
+      ...(p.title ? { title: p.title } : {}),
+      ...(p.companionIndex !== undefined
+        ? { companionIndex: p.companionIndex }
+        : {}),
       firstName: p.firstName,
       lastName: p.lastName,
       birthDate: p.birthDate,

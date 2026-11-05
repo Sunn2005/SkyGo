@@ -2,7 +2,7 @@
 
 ## Phạm vi
 
-Màn đăng ký theo PDF Flight_SkyGo (trang 6): số điện thoại, mật khẩu và xác nhận mật khẩu. Họ tên và email không thu thập ở bước này; adapter mẫu giữ họ tên rỗng và email null. Khi nối BE, không yêu cầu hai trường này trong đăng ký. Đăng ký thành công chuyển sang đăng nhập, điền sẵn số điện thoại; không tự đăng nhập. Có xem hồ sơ, tải lại thông tin và đăng xuất về trang chủ. Không có OTP, quên mật khẩu, sửa hồ sơ hoặc đổi mật khẩu.
+Màn đăng ký bổ sung Họ tên và Email theo yêu cầu mới, cùng số điện thoại, mật khẩu và xác nhận mật khẩu. Họ tên và email là bắt buộc; email phải đúng định dạng. Adapter lưu và trả hai trường này trong thông tin tài khoản. Đăng ký thành công chuyển sang đăng nhập, điền sẵn số điện thoại; không tự đăng nhập. Có xem hồ sơ, tải lại thông tin và đăng xuất về trang chủ. Không có OTP, quên mật khẩu, sửa hồ sơ hoặc đổi mật khẩu.
 
 Chỉ thay đổi frontend. Không gọi API, Supabase hay database. Module này không triển khai hoặc thay đổi backend/MariaDB. Luồng đặt vé yêu cầu đăng nhập trước khi tiếp tục chọn chuyến/nhập hành khách; xem [booking-flow.md](booking-flow.md).
 
@@ -11,8 +11,8 @@ Chỉ thay đổi frontend. Không gọi API, Supabase hay database. Module này
 Từ trang chủ, nhấn biểu tượng tài khoản ở góc phải hoặc mở `/profile`.
 
 - Tài khoản mẫu: `0912345678` / `SkyGoDemo@2027`, tên Nguyễn Văn An.
-- Nút **Điền tài khoản mẫu** chỉ điền form; nhấn **Đăng nhập** để tiếp tục.
-- Đăng ký một số khác rồi đăng nhập bằng mật khẩu vừa nhập; họ tên và email chưa được cung cấp ở bước đăng ký.
+- Màn đăng nhập theo PDF (trang 7 và 18), có mắt hiện/ẩn mật khẩu và nút tiếp tục không đăng nhập để xem chuyến. Tài khoản mẫu dùng để kiểm thử thủ công, không hiện thẻ điền mẫu trên form.
+- Đăng ký một số khác rồi đăng nhập bằng mật khẩu vừa nhập; họ tên và email được lưu cùng tài khoản trong phiên mô phỏng. Khi đăng nhập, email và số điện thoại của tài khoản được dùng làm thông tin liên hệ mặc định trong đặt vé; người dùng có thể chỉnh sửa và bản nháp giữ nội dung đã sửa khi quay lại. Đổi tài khoản hoặc đăng xuất sẽ thay/xóa thông tin liên hệ theo tài khoản, tránh dùng nhầm dữ liệu.
 - Mật khẩu tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt. Không trim mật khẩu. Màn đăng ký hiển thị 3 tiêu chí cập nhật ngay khi nhập: đủ 8 ký tự, có chữ hoa và thường, có số và ký tự đặc biệt; tiêu chí đạt hiện tích xanh.
 - Để trống trường bắt buộc, số điện thoại sai, xác nhận mật khẩu sai và số đã đăng ký đều có thông báo; lỗi không xóa nội dung form.
 - Sai thông tin đăng nhập 5 lần trong 15 phút với cùng số đã chuẩn hóa: khóa số đó 15 phút. Giao diện có đếm ngược; đổi sang số khác vẫn đăng nhập được. Đăng nhập thành công xóa bộ đếm sai.

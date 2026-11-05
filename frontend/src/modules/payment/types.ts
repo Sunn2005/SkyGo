@@ -5,4 +5,5 @@ export type PaymentAttempt = {
   status: PaymentStatus;
   createdAt: string;
   expiresAt: string;
+  completedAt?: string;
 };

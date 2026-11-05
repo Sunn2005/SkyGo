@@ -15,8 +15,8 @@ export default function BookingsScreen() {
     setBusy(true);
     setError("");
     try {
-      const result = await b.openBooking(id);
-      router.push(result.status === "confirmed" ? "/booking" : "/payos");
+      await b.openBooking(id);
+      router.push("/booking");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Chưa thể mở đặt chỗ.");
     } finally {
@@ -25,7 +25,7 @@ export default function BookingsScreen() {
     }
   };
   return (
-    <Screen title="Đặt chỗ của tôi">
+    <Screen title="Lịch sử đặt chỗ">
       <Label size={26} weight="bold">
         Hành trình của bạn
       </Label>
@@ -43,10 +43,14 @@ export default function BookingsScreen() {
       )}
       {!!error && <Notice error>{error}</Notice>}
       {b.history.map((item) => (
-        <Tap key={item.id} disabled={busy} onPress={() => void open(item.id)}>
+        <Tap
+          key={item.receipt.reference}
+          disabled={busy}
+          onPress={() => void open(item.id)}
+        >
           <Card>
             <Label selectable weight="semibold">
-              {item.id}
+              {item.receipt.reference}
             </Label>
             <Label>
               {item.receipt.search.from} → {item.receipt.search.to} ·{" "}
@@ -61,7 +65,9 @@ export default function BookingsScreen() {
             <Label>
               {item.status === "confirmed"
                 ? "Đã thanh toán · Xem vé"
-                : "Chưa thanh toán · Tiếp tục"}
+                : item.payments.at(-1)?.status === "expired"
+                  ? "Hết hạn · Tìm lại chuyến bay"
+                  : "Chờ thanh toán · Tiếp tục"}
             </Label>
             <Label weight="bold">{money(item.receipt.total)}</Label>
           </Card>
@@ -70,7 +76,10 @@ export default function BookingsScreen() {
       {!b.history.length && !b.historyLoading && (
         <Label muted>Bạn chưa có đặt chỗ nào trên thiết bị này.</Label>
       )}
-      <Button title="Tìm chuyến bay" onPress={() => router.replace("/")} />
+      <Button
+        title="Tìm chuyến bay"
+        onPress={() => router.replace("/search")}
+      />
       <Notice>
         Đặt chỗ mẫu được lưu trên thiết bị theo tài khoản. Dùng thông tin giả
         khi thử nghiệm.

@@ -12,6 +12,8 @@ import {
   useAccount,
 } from "@/modules/account/context/account-context";
 import type { ReactNode } from "react";
+import { ReservationNotice } from "@/modules/booking/components/reservation-notice";
+import { BottomNav } from "@/shared/components/bottom-nav";
 import { colors } from "@/shared/theme";
 
 export default function RootLayout() {
@@ -73,6 +75,8 @@ export default function RootLayout() {
               />
               <Stack.Screen name="help" options={{ presentation: "modal" }} />
             </Stack>
+            <BottomNav />
+            <ReservationNotice />
           </View>
         </View>
       </BookingSession>
@@ -84,7 +88,10 @@ export default function RootLayout() {
 function BookingSession({ children }: { children: ReactNode }) {
   const { session } = useAccount();
   return (
-    <BookingProvider accountId={session?.user.phoneNumber ?? "guest"}>
+    <BookingProvider
+      accountId={session?.user.phoneNumber ?? "guest"}
+      accountContact={session?.user}
+    >
       {children}
     </BookingProvider>
   );

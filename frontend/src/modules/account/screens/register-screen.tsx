@@ -100,6 +100,28 @@ export default function RegisterScreen() {
             </Label>
           </View>
           <Field
+            label="Họ tên"
+            value={input.fullName}
+            onChangeText={change("fullName")}
+            autoComplete="name"
+            autoCapitalize="words"
+            editable={!busy}
+            error={fields.fullName}
+            placeholder="Nguyễn Văn An"
+          />
+          <Field
+            label="Email"
+            value={input.email}
+            onChangeText={change("email")}
+            keyboardType="email-address"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!busy}
+            error={fields.email}
+            placeholder="ban@example.com"
+          />
+          <Field
             label="Số điện thoại"
             value={input.phoneNumber}
             onChangeText={change("phoneNumber")}

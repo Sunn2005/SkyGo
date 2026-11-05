@@ -1,7 +1,11 @@
 import type { Search, Flight } from "../../flights/types";
 import type { Traveller, BookingPrice } from "../types";
 
-export const EXTRA_BAG_PRICE = 324000;
+export const isDomestic = (search: Search) =>
+  [search.from, search.to].every((code) =>
+    ["SGN", "HAN", "DAD", "PQC", "CXR"].includes(code),
+  );
+export const EXTRA_BAG_PRICE = 325000;
 export const includedBagWeight = (cabin: Search["cabin"]) =>
   cabin === "Thương gia" ? 32 : 23;
 export const flightPrice = (flight: Flight, cabin: Search["cabin"]) =>
@@ -11,16 +15,24 @@ export function quote(
   selected: Flight[],
   travellers: Traveller[],
 ): BookingPrice {
-  const fare =
-    selected.reduce((sum, f) => sum + flightPrice(f, search.cabin), 0) *
-    search.count;
+  const fare = selected.reduce((sum, f) => {
+    const price = flightPrice(f, f.cabin ?? search.cabin);
+    return (
+      sum +
+      price * search.count +
+      Math.round(price * 0.9 * (search.children ?? 0)) +
+      Math.round(price * 0.1 * (search.infants ?? 0))
+    );
+  }, 0);
   const baggage = travellers.reduce(
     (sum, p) =>
       sum +
-      selected.reduce(
-        (n, _, leg) => n + (p.extraBags[leg] ?? 0) * EXTRA_BAG_PRICE,
-        0,
-      ),
+      (p.kind === "infant"
+        ? 0
+        : selected.reduce(
+            (n, _, leg) => n + (p.extraBags[leg] ?? 0) * EXTRA_BAG_PRICE,
+            0,
+          )),
     0,
   );
   return {
@@ -50,10 +62,23 @@ export function travellerErrors(
   if (!p.firstName.trim()) errors.firstName = "Vui lòng nhập tên.";
   if (!p.lastName.trim()) errors.lastName = "Vui lòng nhập họ.";
   const birth = dateISO(p.birthDate);
-  const cutoff = new Date(departure + "T12:00:00");
-  cutoff.setFullYear(cutoff.getFullYear() - 12);
-  if (!birth || birth < "1900-01-01" || new Date(birth + "T12:00:00") > cutoff)
-    errors.birthDate = "Ngày hợp lệ, từ 12 tuổi (NN/TT/NNNN).";
+  const date = new Date(departure + "T12:00:00");
+  const twelve = new Date(date);
+  twelve.setFullYear(twelve.getFullYear() - 12);
+  const two = new Date(date);
+  two.setFullYear(two.getFullYear() - 2);
+  const birthday = birth ? new Date(birth + "T12:00:00") : null;
+  const kind = p.kind ?? "adult";
+  const validAge =
+    birthday &&
+    birthday <= date &&
+    (kind === "adult"
+      ? birthday <= twelve
+      : kind === "child"
+        ? birthday > twelve && birthday <= two
+        : birthday > two);
+  if (!birth || birth < "1900-01-01" || !validAge)
+    errors.birthDate = `Ngày sinh không đúng nhóm ${kind === "adult" ? "từ 12 tuổi" : kind === "child" ? "2 đến dưới 12 tuổi" : "dưới 2 tuổi"} tại ngày khởi hành.`;
   if (!["Nam", "Nữ", "Khác"].includes(p.gender))
     errors.gender = "Chọn giới tính.";
   if (p.documentType === "cccd") {
@@ -83,9 +108,17 @@ export function bookingErrors(
     !Number.isInteger(search.count) ||
     search.count < 1 ||
     search.count > 4 ||
-    travellers.length !== search.count
+    !Number.isInteger(search.children ?? 0) ||
+    (search.children ?? 0) < 0 ||
+    !Number.isInteger(search.infants ?? 0) ||
+    (search.infants ?? 0) < 0 ||
+    search.count + (search.children ?? 0) > 4 ||
+    (search.infants ?? 0) > search.count ||
+    travellers.length !==
+      search.count + (search.children ?? 0) + (search.infants ?? 0)
   )
-    errors.booking = "Chỉ hỗ trợ một chiều/khứ hồi, 1–4 người lớn.";
+    errors.booking =
+      "Cần ít nhất 1 người lớn, tối đa 4 khách có ghế riêng và mỗi người lớn đi cùng tối đa 1 em bé.";
   const validISO = (iso: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(iso) &&
     dateISO(`${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`) ===
@@ -99,10 +132,41 @@ export function bookingErrors(
     errors.search = "Ngày bay hoặc hành trình chưa hợp lệ.";
   if (!["Phổ thông", "Thương gia"].includes(search.cabin))
     errors.cabin = "Chọn hạng vé hợp lệ.";
+  if (
+    selected.some(
+      (f) => f.cabin && !["Phổ thông", "Thương gia"].includes(f.cabin),
+    )
+  )
+    errors.cabin = "Hạng vé từng chặng chưa hợp lệ.";
   const legCount = search.type === "round-trip" ? 2 : 1;
   if (selected.length !== legCount)
     errors.flight = "Vui lòng chọn đủ chuyến bay.";
+  const actual = { adult: 0, child: 0, infant: 0 };
+  const companions = new Set<number>();
   travellers.forEach((p, i) => {
+    const kind = p.kind ?? "adult";
+    if (!(kind in actual)) {
+      errors[`${i}-kind`] = "Nhóm hành khách không hợp lệ.";
+      return;
+    }
+    actual[kind]++;
+    if (kind === "infant") {
+      const companion = p.companionIndex;
+      if (
+        companion === undefined ||
+        companions.has(companion) ||
+        !travellers[companion] ||
+        (travellers[companion].kind ?? "adult") !== "adult"
+      )
+        errors[`${i}-companionIndex`] =
+          "Chọn một người lớn đi kèm riêng cho em bé.";
+      else companions.add(companion);
+      if (Object.values(p.extraBags).some((n) => n !== 0))
+        errors[`${i}-extraBags`] =
+          "Em bé không mua hành lý riêng; mua trên người lớn đi kèm.";
+    }
+    if (!isDomestic(search) && p.documentType !== "passport")
+      errors[`${i}-documentType`] = "Chuyến quốc tế bắt buộc hộ chiếu.";
     Object.entries(
       travellerErrors(
         p,
@@ -118,12 +182,20 @@ export function bookingErrors(
           !Number.isInteger(+leg) ||
           +leg < 0 ||
           +leg >= legCount ||
-          ![0, 1].includes(n),
+          !Number.isInteger(n) ||
+          n < 0 ||
+          n > 4,
       )
     )
       errors[`${i}-extraBags`] =
-        "Mỗi người được mua thêm tối đa 1 kiện mỗi chặng.";
+        "Mỗi người được mua thêm tối đa 4 kiện mỗi chặng.";
   });
+  if (
+    actual.adult !== search.count ||
+    actual.child !== (search.children ?? 0) ||
+    actual.infant !== (search.infants ?? 0)
+  )
+    errors.booking = "Nhóm hành khách chưa khớp tìm kiếm.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
     errors.email = "Vui lòng nhập email hợp lệ.";
   if (
@@ -133,3 +205,12 @@ export function bookingErrors(
     errors.phone = "Vui lòng nhập số điện thoại hợp lệ.";
   return errors;
 }
+
+export const passengerSummary = (s: Search) =>
+  [
+    `${s.count} người lớn`,
+    s.children ? `${s.children} trẻ em` : "",
+    s.infants ? `${s.infants} em bé` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");

@@ -12,7 +12,7 @@ Quy tắc đã nêu trong kế hoạch được ghi riêng với giả định k
 
 ## Cập nhật frontend đã được duyệt
 
-Người dùng duyệt triển khai frontend mock: đăng ký → đăng nhập; CCCD/hộ chiếu; Phổ thông gồm 1 kiện 23 kg, Thương gia gồm 1 kiện tối đa 32 kg; mua thêm tối đa 1 kiện 23 kg giá 324.000đ mỗi người mỗi chặng; giá mẫu VND đã gồm thuế/phí. Chi tiết và giới hạn tích hợp: [booking-flow.md](../../../../frontend/docs/booking-flow.md). Các giả định kiểm thử cũ bên dưới được giữ để truy vết và không áp dụng cho bảng giá frontend mới.
+Cập nhật ngày 05/11/2026: frontend hỗ trợ nhóm người lớn, trẻ em và em bé. Giá trẻ em 90%, em bé 10% theo quyết định mới nhất; em bé không có ghế riêng, gắn với người lớn. Hành lý mua thêm 0–4 kiện/người có ghế riêng/chiều, 325.000đ/kiện. Chọn hạng vé riêng từng chặng, giữ chỗ 15 phút từ chuyến đầu tiên, cảnh báo còn 5 phút, QR không làm mới thời hạn. Trước đăng nhập có hộp thoại xác nhận; Hồ sơ và Lịch sử tách riêng. Đây là bản mock; giới hạn số người, thuế/phí thật, hành lý miễn cước em bé và chống giữ chỗ lặp cần BE/nhóm xác nhận. Quy tắc BR-BKG-002 bên trên mô tả phạm vi cũ; phạm vi frontend và điểm nối BE mới được ghi trong [booking-flow.md](../../../../frontend/docs/booking-flow.md). Các giả định kiểm thử cũ bên dưới chỉ giữ để truy vết.
 
 ## Giả định kiểm thử cũ — chưa chốt cho backend
 

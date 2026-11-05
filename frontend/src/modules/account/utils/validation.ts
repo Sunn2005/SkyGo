@@ -31,11 +31,10 @@ export const passwordRequirements = [
 
 export function validateRegister(input: RegisterInput) {
   const errors = validateLogin(input);
-  if (
-    input.email.trim() &&
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())
-  )
-    errors.email = "Vui lòng nhập email hợp lệ hoặc để trống.";
+  if (!input.fullName.trim()) errors.fullName = "Vui lòng nhập họ tên.";
+  if (!input.email.trim()) errors.email = "Vui lòng nhập email.";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()))
+    errors.email = "Vui lòng nhập email hợp lệ.";
   if (!passwordRequirements.every((rule) => rule.test(input.password)))
     errors.password =
       "Ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.";

@@ -10,23 +10,23 @@ const faqs = [
   ],
   [
     "Có thể thử toàn bộ hành trình không?",
-    "Có. Tìm chuyến một chiều hoặc khứ hồi, đăng nhập trước khi đặt vé, nhập thông tin và giấy tờ giả, chọn hành lý, xem lại rồi thử thanh toán PayOS mô phỏng.",
+    "Có. Tìm chuyến một chiều hoặc khứ hồi, đăng nhập trước khi đặt vé, nhập thông tin và giấy tờ giả, xem lại, mua thêm hành lý nếu cần rồi thử thanh toán QR mô phỏng.",
   ],
   [
     "Giá vé và tiền tệ được tính thế nào?",
-    "Giá bằng VND, đã gồm thuế phí. Phổ thông gồm 1 kiện 23 kg; Thương gia gồm 1 kiện tối đa 32 kg. Mua thêm tối đa 1 kiện 23 kg giá 324.000đ/người/chặng.",
+    "Giá bằng VND, đã gồm thuế phí. Phổ thông gồm 1 kiện 23 kg; Thương gia gồm 1 kiện tối đa 32 kg. Mua thêm tối đa 4 kiện 23 kg giá 325.000đ/người/chặng.",
   ],
   [
     "Vé khứ hồi hoạt động ra sao?",
-    "Chọn chuyến đi rồi chuyến về, dùng chung danh sách 1–4 hành khách. Hành lý mua thêm chọn riêng cho từng người/từng chặng. Thanh toán chung một booking.",
+    "Chọn chuyến đi rồi chuyến về, dùng chung danh sách người lớn, trẻ em và em bé. Hành lý mua thêm chọn riêng cho từng người/từng chặng. Thanh toán chung một booking.",
   ],
   [
     "Làm sao thử thanh toán thất bại?",
-    "Trên màn PayOS mô phỏng, chọn thành công, thất bại, hủy hoặc hết hạn. Thử thanh toán lại vẫn dùng cùng mã booking.",
+    "Trên màn QR mô phỏng, mở công cụ thử nghiệm để chọn thành công, thất bại hoặc hết hạn. Chỉ thử thanh toán lại khi giữ chỗ còn hiệu lực.",
   ],
   [
     "Dữ liệu của tôi được lưu ở đâu?",
-    "Booking đã tạo lưu trên thiết bị theo tài khoản. Tải lại app cần đăng nhập lại rồi mở Tài khoản → Đặt chỗ của tôi. Tài khoản mới và bản nháp vẫn chỉ lưu trong phiên; dùng thông tin giả khi trải nghiệm.",
+    "Booking đã tạo lưu trên thiết bị theo tài khoản. Tải lại app cần đăng nhập lại rồi mở tab Lịch sử. Tài khoản mới và bản nháp vẫn chỉ lưu trong phiên; dùng thông tin giả khi trải nghiệm.",
   ],
 ];
 export default function HelpScreen() {

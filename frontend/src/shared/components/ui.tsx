@@ -32,6 +32,7 @@ export function Label({
       {...props}
       style={[
         {
+          flexShrink: 1,
           fontFamily: fonts[weight],
           fontSize: size,
           lineHeight: size * 1.4,
@@ -56,7 +57,7 @@ export function Icon({
   return (
     <Image
       source={assets[name]}
-      style={{ width: width ?? size, height: size }}
+      style={{ width: width ?? size, height: size, flexShrink: 0 }}
       contentFit="contain"
       accessibilityElementsHidden
       importantForAccessibility="no"
@@ -125,6 +126,7 @@ export function Button({
       }}
       style={({ pressed }) => ({
         flex: fill ? 1 : undefined,
+        minWidth: 0,
         minHeight: 54,
         padding: space.md,
         borderRadius: radius.md,
@@ -188,7 +190,12 @@ export function Row({
   return (
     <View
       style={[
-        { flexDirection: "row", alignItems: "center", gap: space.md },
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.md,
+          minWidth: 0,
+        },
         style,
       ]}
     >

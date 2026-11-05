@@ -36,8 +36,7 @@ export default function FiltersScreen() {
       <Host matchContents colorScheme="light" seedColor={c.primary}>
         <Picker selectedValue={airline} onValueChange={setAirline}>
           <Picker.Item label="Tất cả hãng" value="all" />
-          <Picker.Item label="Vietnam Airlines" value="Vietnam Airlines" />
-          <Picker.Item label="Vietjet Air" value="Vietjet Air" />
+          <Picker.Item label="SkyGo" value="SkyGo" />
         </Picker>
       </Host>
       <Label size={17} weight="semibold">

@@ -34,7 +34,7 @@ after(() => fs.rmSync(compiled, { recursive: true, force: true }));
 const registration = {
   fullName: "  Trần Minh Anh  ",
   phoneNumber: "0987654321",
-  email: "",
+  email: "  minhanh@example.com  ",
   password: "TestSkyGo@2027",
   confirmPassword: "TestSkyGo@2027",
 };
@@ -48,7 +48,7 @@ test("normalizes local and +84 formats to the same account key", () => {
   assert.equal(normalizePhone("123"), null);
 });
 
-test("validates required fields, optional email, password policy and confirmation", () => {
+test("validates name, email, phone, password policy and confirmation", () => {
   assert.deepEqual(validateRegister(registration), {});
   const errors = validateRegister({
     ...registration,
@@ -57,7 +57,7 @@ test("validates required fields, optional email, password policy and confirmatio
     password: "weak",
     confirmPassword: "other",
   });
-  for (const field of ["email", "password", "confirmPassword"])
+  for (const field of ["fullName", "email", "password", "confirmPassword"])
     assert.ok(errors[field]);
 });
 
@@ -65,7 +65,7 @@ test("register → login → me → logout; no credentials returned in user payl
   const api = service();
   const user = await api.register(registration);
   assert.equal(user.fullName, "Trần Minh Anh");
-  assert.equal(user.email, null);
+  assert.equal(user.email, "minhanh@example.com");
   assert.equal(user.password, undefined);
   assert.equal(user.accessToken, undefined);
   const session = await api.login(registration);
@@ -152,14 +152,16 @@ test("expired and unknown sessions are rejected; password is never trimmed", asy
   await assert.rejects(api.me(session.accessToken), hasCode("UNAUTHENTICATED"));
 });
 
-test("PDF registration works with phone and passwords only", async () => {
+test("registration rejects missing name or email instead of creating incomplete accounts", async () => {
   const api = service();
-  const input = { ...registration, fullName: "", email: "" };
-  assert.deepEqual(validateRegister(input), {});
-  const user = await api.register(input);
-  assert.equal(user.fullName, "");
-  assert.equal(user.email, null);
-  assert.ok((await api.login(input)).accessToken);
+  for (const field of ["fullName", "email"]) {
+    const input = { ...registration, [field]: "   " };
+    assert.ok(validateRegister(input)[field]);
+    await assert.rejects(
+      api.register(input),
+      (error) => error.code === "VALIDATION_ERROR" && !!error.fields[field],
+    );
+  }
 });
 
 test("password accepts exactly 8 characters and requires every criterion", () => {

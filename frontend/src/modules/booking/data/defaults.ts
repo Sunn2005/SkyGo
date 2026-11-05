@@ -10,10 +10,10 @@ export const initialSearch: Search = {
   count: 1,
   cabin: "Phổ thông",
 };
-export const newTraveller = (i: number): Traveller => ({
-  firstName: i === 0 ? "Minh" : "",
-  lastName: i === 0 ? "Nguyễn" : "",
-  birthDate: "12/03/1990",
+export const newTraveller = (_i: number): Traveller => ({
+  firstName: "",
+  lastName: "",
+  birthDate: "",
   gender: "Nam",
   extraBags: {},
   documentType: "cccd",

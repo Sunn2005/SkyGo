@@ -1,3 +1,4 @@
+import { passengerSummary } from "../services/booking-rules";
 import { View } from "react-native";
 import { Icon, Label, Row } from "@/shared/components/ui";
 import { colors as c, radius, space } from "@/shared/theme";
@@ -6,7 +7,7 @@ import type { Leg } from "@/modules/flights/types";
 import { useBooking } from "../context/booking-context";
 
 export function TripSummary({ leg }: { leg?: Leg }) {
-  const { legs, search } = useBooking();
+  const { legs, search, selected } = useBooking();
   const route = leg ?? legs[0];
   return (
     <Row
@@ -23,7 +24,10 @@ export function TripSummary({ leg }: { leg?: Leg }) {
           {!leg && legs.length > 1 ? ` · ${legs.length} chặng` : ""}
         </Label>
         <Label size={12} muted>
-          {dateLabel(route.date)} · {search.count} người · {search.cabin}
+          {dateLabel(route.date)} · {passengerSummary(search)}
+          {!leg && selected.length
+            ? ` · ${selected.map((f) => f.cabin ?? search.cabin).join(" / ")}`
+            : ""}
         </Label>
       </View>
     </Row>

@@ -1,7 +1,9 @@
-import { View } from "react-native";
-import { router } from "expo-router";
+import { flightPrice } from "@/modules/booking/services/booking-rules";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Modal, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useAccount } from "@/modules/account/context/account-context";
 import { useBooking } from "@/modules/booking/context/booking-context";
-import { airport } from "@/modules/flights/data/airports";
 import { flights } from "@/modules/flights/data/flights";
 import { money } from "@/shared/utils/format";
 import {
@@ -11,6 +13,7 @@ import {
   Divider,
   Icon,
   Label,
+  Notice,
   Row,
   Tap,
 } from "@/shared/components/ui";
@@ -21,6 +24,15 @@ import { colors as c, radius, space } from "@/shared/theme";
 
 export default function ResultsScreen() {
   const b = useBooking();
+  const { session } = useAccount();
+  const { resumeSelection } = useLocalSearchParams<{
+    resumeSelection?: string;
+  }>();
+  const [askLogin, setAskLogin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const selecting = useRef(false);
+  const resumed = useRef(false);
   const leg = b.legs[b.legIndex] ?? b.legs[0];
   const results = flights
     .filter(
@@ -35,13 +47,51 @@ export default function ResultsScreen() {
         ? b.priceFor(a) - b.priceFor(z)
         : a.stops - z.stops || b.priceFor(a) - b.priceFor(z),
     );
-  const choose = (flight: (typeof flights)[number]) => {
-    b.setCandidate(flight);
-    router.push("/detail");
-  };
+  const choose = useCallback(
+    async (flight: (typeof flights)[number]) => {
+      if (selecting.current) return;
+      b.setCandidate(flight);
+      if (!session) {
+        setAskLogin(true);
+        return;
+      }
+      selecting.current = true;
+      setBusy(true);
+      setError("");
+      try {
+        await b.selectFlight(flight);
+        if (b.legIndex < b.legs.length - 1) {
+          b.setLegIndex(b.legIndex + 1);
+          router.replace("/results");
+        } else router.push("/traveller");
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Chưa thể giữ chỗ. Vui lòng chọn lại chuyến bay.",
+        );
+      } finally {
+        selecting.current = false;
+        setBusy(false);
+      }
+    },
+    [b, session],
+  );
+  useEffect(() => {
+    if (resumeSelection !== "1") {
+      resumed.current = false;
+      return;
+    }
+    if (session && !resumed.current) {
+      resumed.current = true;
+      router.setParams({ resumeSelection: undefined });
+      void choose(b.candidate);
+    }
+  }, [resumeSelection, session, choose, b.candidate]);
   return (
     <Screen
-      title={`${airport(leg.from).city} → ${airport(leg.to).city}`}
+      design
+      title={b.legIndex ? "Chuyến về" : "Chuyến đi"}
       right={
         <Tap
           label="Các chuyến bay đã lưu"
@@ -51,6 +101,48 @@ export default function ResultsScreen() {
         </Tap>
       }
     >
+      <Modal
+        visible={askLogin}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAskLogin(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "#102A4380",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <Card>
+            <Label size={22} weight="bold">
+              Đăng nhập để đặt vé
+            </Label>
+            <Label>
+              Lựa chọn của bạn được lưu tạm. Giá và chỗ sẽ được kiểm tra lại sau
+              khi đăng nhập.
+            </Label>
+            <Button
+              title="Đăng nhập để tiếp tục"
+              onPress={() => {
+                setAskLogin(false);
+                router.push({
+                  pathname: "/login",
+                  params: { returnTo: "flight-selection" },
+                });
+              }}
+            />
+            <Button
+              title="Để sau"
+              secondary
+              onPress={() => setAskLogin(false)}
+            />
+          </Card>
+        </View>
+      </Modal>
+      {!!error && <Notice error>{error}</Notice>}
+      {busy && <Label color={c.primary}>Đang kiểm tra chỗ và giá…</Label>}
       {b.legs.length > 1 && (
         <Label color={c.primary} weight="semibold" size={13}>
           CHẶNG {b.legIndex + 1} / {b.legs.length}
@@ -118,18 +210,19 @@ export default function ResultsScreen() {
               <Icon name="6-6622-imgPlane1" size={17} />
             </View>
             <Tap
-              onPress={() => choose(flight)}
+              disabled={busy}
+              onPress={() => void choose(flight)}
               style={{ flex: 1, minHeight: 36 }}
             >
-              <Label size={14} weight="semibold">
+              <Label size={13} weight="semibold">
                 {flight.airline}
               </Label>
               <Label size={11} muted>
-                {flight.number} · {b.search.cabin}
+                {flight.number}
               </Label>
             </Tap>
             {i === 0 ? (
-              <Badge>Gợi ý tốt nhất</Badge>
+              <Badge>Đề xuất</Badge>
             ) : (
               <Tap
                 label={
@@ -159,22 +252,38 @@ export default function ResultsScreen() {
           </Row>
           <Tap
             label={`Chọn ${flight.airline} ${flight.departure}, ${money(b.priceFor(flight))}`}
-            onPress={() => choose(flight)}
+            disabled={busy}
+            onPress={() => void choose(flight)}
           >
             <FlightTimes flight={flight} leg={leg} plane="6-6622-imgPlane2" />
           </Tap>
           <Divider />
-          <Tap onPress={() => choose(flight)}>
-            <Row>
-              <Label muted size={12} style={{ flex: 1 }}>
-                {b.search.count} người · Mỗi người
-              </Label>
-              <Label selectable size={29} weight="bold">
-                {money(b.priceFor(flight))}
-              </Label>
-              <Icon name="6-6622-imgChevronRight" size={18} />
-            </Row>
-          </Tap>
+          <Label size={12} muted>
+            Chọn hạng vé cho {b.legIndex === 0 ? "chặng đi" : "chặng về"}
+          </Label>
+          <Row>
+            {(["Phổ thông", "Thương gia"] as const).map((cabin) => (
+              <Tap
+                key={cabin}
+                label={`Chọn ${flight.number} ${cabin}`}
+                disabled={busy}
+                onPress={() => void choose({ ...flight, cabin })}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: c.primary,
+                  borderRadius: 10,
+                  backgroundColor: c.tint,
+                  padding: 10,
+                }}
+              >
+                <Label size={12}>{cabin}</Label>
+                <Label size={16} weight="bold">
+                  {money(flightPrice(flight, cabin))}
+                </Label>
+              </Tap>
+            ))}
+          </Row>
         </Card>
       ))}
       {!results.length && (
@@ -194,9 +303,6 @@ export default function ResultsScreen() {
           />
         </View>
       )}
-      <Label size={11} muted>
-        Chuyến bay và giá vé là dữ liệu mẫu để trải nghiệm ứng dụng.
-      </Label>
     </Screen>
   );
 }

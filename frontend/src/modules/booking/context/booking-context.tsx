@@ -7,18 +7,58 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import {
+  reservationService,
+  type Reservation,
+} from "../services/reservation-service";
 import { flights } from "@/modules/flights/data/flights";
 import { getLegs } from "@/modules/flights/utils/trip";
 import { initialSearch, newTraveller } from "@/modules/booking/data/defaults";
 import { type Flight, type Search } from "@/modules/flights/types";
 import type { Traveller, Booking, BookingInput } from "@/modules/booking/types";
 
-import { quote, flightPrice } from "../services/booking-rules";
+import { quote, flightPrice, isDomestic } from "../services/booking-rules";
 import { bookingService } from "../data/booking-service";
 import type { PaymentOutcome } from "@/modules/payment/types";
 
-function useBookingState(accountId: string) {
+type AccountContact = { email?: string | null; phoneNumber?: string };
+function useBookingState(accountId: string, accountContact: AccountContact) {
   const ownerRef = useRef(accountId);
+  const [reservation, setReservation] = useState<Reservation | null>(null);
+  const reservationRef = useRef<Reservation | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [passengersConfirmed, setPassengersConfirmed] = useState(false);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const remaining = reservation
+    ? Math.max(0, Math.ceil((reservation.expiresAt - now) / 1000))
+    : null;
+  const releaseHold = () => {
+    if (reservationRef.current)
+      reservationService.release(reservationRef.current.id);
+    reservationRef.current = null;
+    setReservation(null);
+    setWarningDismissed(false);
+  };
+  const selectFlight = async (flight: Flight) => {
+    const next = selected.slice(0, legIndex + 1);
+    next[legIndex] = flight;
+    // reserve() validates new capacity before replacing the previous hold.
+    const hold = reservationService.reserve(
+      accountId,
+      search,
+      next,
+      reservationRef.current,
+    );
+    reservationRef.current = hold;
+    setReservation(hold);
+    setNow(hold.serverNow);
+    setSelected(next);
+    setPassengersConfirmed(false);
+  };
 
   const checkoutDraft = useRef({ fingerprint: "", key: "" });
   const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
@@ -26,6 +66,10 @@ function useBookingState(accountId: string) {
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(accountId !== "guest");
   useLayoutEffect(() => {
+    if (ownerRef.current !== accountId && reservationRef.current) {
+      reservationService.release(reservationRef.current.id);
+      reservationRef.current = null;
+    }
     ownerRef.current = accountId;
     checkoutDraft.current = { fingerprint: "", key: "" };
     return () => {
@@ -38,8 +82,8 @@ function useBookingState(accountId: string) {
   const [selected, setSelected] = useState<Flight[]>([]);
   const [legIndex, setLegIndex] = useState(0);
   const [candidate, setCandidate] = useState<Flight>(flights[0]);
-  const [email, setEmail] = useState("minh.nguyen@example.com");
-  const [phone, setPhone] = useState("+84 912 345 678");
+  const [email, setEmail] = useState(accountContact.email ?? "");
+  const [phone, setPhone] = useState(accountContact.phoneNumber ?? "");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [sort, setSort] = useState<"best" | "cheapest">("best");
   const [airline, setAirline] = useState("all");
@@ -50,6 +94,7 @@ function useBookingState(accountId: string) {
   if (owner !== accountId) {
     setOwner(accountId);
     if (owner !== "guest" || accountId === "guest") {
+      setReservation(null);
       setSearch(initialSearch);
       setSelected([]);
       setLegIndex(0);
@@ -62,14 +107,17 @@ function useBookingState(accountId: string) {
     setTravellers(
       Array.from(
         {
-          length: owner === "guest" && accountId !== "guest" ? search.count : 1,
+          length:
+            owner === "guest" && accountId !== "guest"
+              ? search.count + (search.children ?? 0) + (search.infants ?? 0)
+              : 1,
         },
-        (_, i) => newTraveller(i),
+        (_, i) => travellers[i] ?? newTraveller(i),
       ),
     );
 
-    setEmail("minh.nguyen@example.com");
-    setPhone("+84 912 345 678");
+    setEmail(accountContact.email ?? "");
+    setPhone(accountContact.phoneNumber ?? "");
     setFavorites([]);
     setSort("best");
     setAirline("all");
@@ -127,6 +175,13 @@ function useBookingState(accountId: string) {
   };
   const checkout = async () => {
     if (accountId === "guest") throw new Error("Bạn cần đăng nhập để đặt vé.");
+    if (
+      !reservationRef.current ||
+      reservationRef.current.expiresAt <= Date.now()
+    )
+      throw new Error("Thời gian giữ chỗ đã hết. Vui lòng tìm lại chuyến.");
+    if (!passengersConfirmed)
+      throw new Error("Vui lòng xác nhận thông tin hành khách.");
     const fingerprint = JSON.stringify({
       search,
       selected,
@@ -140,6 +195,8 @@ function useBookingState(accountId: string) {
         key: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       };
     const payload: BookingInput = {
+      reservationId: reservationRef.current.id,
+      expiresAt: new Date(reservationRef.current.expiresAt).toISOString(),
       search,
       selected,
       travellers,
@@ -184,22 +241,74 @@ function useBookingState(accountId: string) {
       payment.id,
       outcome,
     );
-    return refreshBooking();
+    const result = await refreshBooking();
+    if (outcome === "expired" && reservationRef.current) {
+      reservationService.release(reservationRef.current.id);
+      const expired = { ...reservationRef.current, expiresAt: Date.now() };
+      reservationRef.current = expired;
+      setReservation(expired);
+    }
+    if (result.status === "confirmed") {
+      // Payment adapter has already rejected expired events.
+      if (reservationRef.current)
+        reservationService.confirm(reservationRef.current.id);
+      reservationRef.current = null;
+      setReservation(null);
+    }
+    return result;
   };
-  const updateTraveller = (i: number, patch: Partial<Traveller>) =>
+  const updateTraveller = (i: number, patch: Partial<Traveller>) => {
+    if (Object.keys(patch).some((key) => key !== "extraBags"))
+      setPassengersConfirmed(false);
     setTravellers((ps) =>
       ps.map((p, index) => (index === i ? { ...p, ...patch } : p)),
     );
+  };
   const startSearch = () => {
+    releaseHold();
+    setPassengersConfirmed(false);
     setCurrentBooking(null);
     checkoutDraft.current = { fingerprint: "", key: "" };
     setSelected([]);
     setLegIndex(0);
-    setTravellers((ps) =>
-      Array.from({ length: search.count }, (_, i) => ps[i] ?? newTraveller(i)),
-    );
+    setTravellers((ps) => {
+      const kinds = [
+        ...Array(search.count).fill("adult"),
+        ...Array(search.children ?? 0).fill("child"),
+        ...Array(search.infants ?? 0).fill("infant"),
+      ] as ("adult" | "child" | "infant")[];
+      const seen = { adult: 0, child: 0, infant: 0 };
+      return kinds.map((kind, i) => {
+        const index = seen[kind]++;
+        const old = ps.filter((p) => (p.kind ?? "adult") === kind)[index];
+        return {
+          ...(old ?? {
+            ...newTraveller(i),
+            birthDate: "",
+            firstName: "",
+            lastName: "",
+          }),
+          kind,
+          extraBags: {},
+          ...(kind === "adult"
+            ? { title: old?.title ?? ("Ông" as const) }
+            : {}),
+          ...(kind === "infant"
+            ? { companionIndex: index, extraBags: {} }
+            : {}),
+          ...(!isDomestic(search) ? { documentType: "passport" as const } : {}),
+        };
+      });
+    });
   };
   return {
+    reservation,
+    remaining,
+    warningDismissed,
+    setWarningDismissed,
+    passengersConfirmed,
+    setPassengersConfirmed,
+    selectFlight,
     search,
     setSearch,
     travellers,
@@ -244,7 +353,8 @@ function useBookingState(accountId: string) {
     retryPayment,
     refreshBooking,
     simulatePayment,
-    priceFor: (flight: Flight) => flightPrice(flight, search.cabin),
+    priceFor: (flight: Flight) =>
+      flightPrice(flight, flight.cabin ?? search.cabin),
   };
 }
 const BookingContext = createContext<ReturnType<typeof useBookingState> | null>(
@@ -253,11 +363,13 @@ const BookingContext = createContext<ReturnType<typeof useBookingState> | null>(
 export function BookingProvider({
   children,
   accountId = "guest",
+  accountContact = {},
 }: {
   children: ReactNode;
   accountId?: string;
+  accountContact?: AccountContact;
 }) {
-  const value = useBookingState(accountId);
+  const value = useBookingState(accountId, accountContact);
   return <BookingContext value={value}>{children}</BookingContext>;
 }
 export function useBooking() {

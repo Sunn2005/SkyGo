@@ -18,7 +18,14 @@ export function Field({
   style?: TextInputProps["style"];
 }) {
   return (
-    <View style={{ flex: half ? 1 : undefined, gap: 6 }}>
+    <View
+      style={{
+        flex: half ? 1 : undefined,
+        width: half ? undefined : "100%",
+        minWidth: 0,
+        gap: 6,
+      }}
+    >
       <Label size={12} muted>
         {label}
       </Label>
@@ -30,6 +37,8 @@ export function Field({
           placeholderTextColor={c.muted}
           style={[
             {
+              minWidth: 0,
+              width: "100%",
               minHeight: 46,
               paddingHorizontal: 14,
               paddingVertical: 10,
@@ -78,7 +87,14 @@ export function SelectField({
   half?: boolean;
 }) {
   return (
-    <View style={{ flex: half ? 1 : undefined, gap: 6 }}>
+    <View
+      style={{
+        flex: half ? 1 : undefined,
+        width: half ? undefined : "100%",
+        minWidth: 0,
+        gap: 6,
+      }}
+    >
       <Label size={12} muted>
         {label}
       </Label>
@@ -86,6 +102,7 @@ export function SelectField({
         label={`${label}: ${value}`}
         onPress={onPress}
         style={{
+          minHeight: 46,
           borderWidth: 1,
           borderColor: c.line,
           borderRadius: radius.sm,

@@ -1,7 +1,7 @@
+import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
 import { View } from "react-native";
 import { Button, Label, Row } from "@/shared/components/ui";
 import { money } from "@/shared/utils/format";
-import { useBooking } from "../context/booking-context";
 
 export function ActionBar({
   title,
@@ -16,21 +16,37 @@ export function ActionBar({
   loading?: boolean;
   disabled?: boolean;
 }) {
-  const { search } = useBooking();
+  const { compact } = useResponsiveLayout();
+  const stacked = compact && price !== undefined;
   return (
-    <Row style={{ gap: 14 }}>
+    <Row
+      style={{
+        gap: 12,
+        flexDirection: stacked ? "column" : "row",
+        alignItems: "stretch",
+      }}
+    >
       {price !== undefined && (
-        <View style={{ maxWidth: "40%", gap: 2 }}>
-          <Label selectable size={22} weight="bold">
+        <View
+          style={{ width: stacked ? "100%" : "43%", flexShrink: 0, gap: 2 }}
+        >
+          <Label
+            selectable
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            size={20}
+            weight="bold"
+          >
             {money(price)}
           </Label>
           <Label size={10} muted>
-            Tổng · VND · {search.count} người
+            Tổng thanh toán · VNĐ
           </Label>
         </View>
       )}
       <Button
-        fill
+        fill={!stacked}
         title={title}
         onPress={onPress}
         loading={loading}

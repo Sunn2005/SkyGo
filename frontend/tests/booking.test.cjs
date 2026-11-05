@@ -10,6 +10,7 @@ for (const file of [
   "booking/data/booking-snapshot",
   "booking/data/mock-booking-service",
   "flights/data/flights",
+  "booking/services/reservation-service",
 ]) {
   const target = path.join(compiled, `${file}.js`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -72,7 +73,7 @@ const memory = () => {
   };
 };
 
-test("round trip: two passengers, one extra outbound bag totals 6,300,000 VND", () => {
+test("round trip: two passengers, one extra outbound bag totals 6,301,000 VND", () => {
   const p = payload();
   p.search.type = "round-trip";
   p.search.count = 2;
@@ -80,7 +81,7 @@ test("round trip: two passengers, one extra outbound bag totals 6,300,000 VND", 
   travellers[0].extraBags[0] = 1;
   assert.equal(
     quote(p.search, [flights[0], flights[0]], travellers).total,
-    6300000,
+    6301000,
   );
   assert.equal(
     quote(
@@ -88,7 +89,7 @@ test("round trip: two passengers, one extra outbound bag totals 6,300,000 VND", 
       [flights[0], flights[0]],
       travellers,
     ).total,
-    16152000,
+    16153000,
   );
   assert.equal(includedBagWeight("Thương gia"), 32);
   assert.equal(includedBagWeight("Phổ thông"), 23);
@@ -149,7 +150,7 @@ test("validates CCCD, passport through return date, age, dates and 1–4 adults"
     bookingErrors(
       draft.search,
       draft.selected,
-      [{ ...p, extraBags: { 0: 2 } }],
+      [{ ...p, extraBags: { 0: 5 } }],
       draft.email,
       draft.phone,
     )["0-extraBags"],
@@ -290,4 +291,116 @@ test("legacy stored booking is normalized without losing its reference, price, p
   assert.equal((await restarted.list("u1")).length, 1);
   const saved = JSON.parse(storage.getItem(key))[0];
   assert.deepEqual(saved.receipt, booking.receipt);
+});
+
+const { createReservationService } = require(
+  path.join(compiled, "booking/services/reservation-service.js"),
+);
+test("holds prevent overselling; swaps preserve expiry and failure keeps old seats", () => {
+  let now = 1000;
+  const api = createReservationService(() => now, 2);
+  const s = { ...payload().search, count: 2 };
+  const first = api.reserve("a", s, [flights[0]]);
+  assert.throws(() => api.reserve("b", s, [flights[0]]), /Không đủ/);
+  const other = api.reserve("b", s, [flights[1]]);
+  assert.throws(() => api.reserve("a", s, [flights[1]], first), /Không đủ/);
+  assert.throws(() => api.reserve("c", s, [flights[0]]), /Không đủ/);
+  now += 60000;
+  const swap = api.reserve("a", s, [flights[2]], first);
+  assert.equal(swap.expiresAt, first.expiresAt);
+  api.release(other.id);
+  now = first.expiresAt;
+  assert.throws(() => api.reserve("a", s, [flights[0]], swap), /hết/);
+  assert.ok(api.reserve("b", s, [flights[0]]));
+});
+test("QR shares the original reservation expiry and cannot renew an expired hold", async () => {
+  let now = 1000;
+  const api = createMockBookingService(memory(), () => now);
+  const expiresAt = new Date(now + 15 * 60000).toISOString();
+  let b = await api.create("u1", { ...payload(), expiresAt }, "hold");
+  now += 10 * 60000;
+  b = await api.createPayment("u1", b.id);
+  assert.equal(b.payments[0].expiresAt, expiresAt);
+  now += 5 * 60000;
+  await api.simulateWebhook("u1", b.id, b.payments[0].id, "paid");
+  assert.equal((await api.get("u1", b.id)).status, "pending_payment");
+  await assert.rejects(api.createPayment("u1", b.id), /hết hạn/);
+});
+
+test("family fares and seat inventory exclude lap infants, validate groups and companions", () => {
+  const draft = payload();
+  const s = { ...draft.search, children: 1, infants: 1 };
+  const adult = { ...person(), kind: "adult" };
+  const child = { ...person(), kind: "child", birthDate: "12/03/2018" };
+  const infant = {
+    ...person(),
+    kind: "infant",
+    birthDate: "12/03/2025",
+    companionIndex: 0,
+  };
+  assert.equal(quote(s, [flights[0]], [adult, child, infant]).fare, 2988000);
+  assert.deepEqual(
+    bookingErrors(
+      s,
+      [flights[0]],
+      [adult, child, infant],
+      draft.email,
+      draft.phone,
+    ),
+    {},
+  );
+  assert.ok(
+    bookingErrors(
+      s,
+      [flights[0]],
+      [adult, child, { ...infant, companionIndex: 1 }],
+      draft.email,
+      draft.phone,
+    )["2-companionIndex"],
+  );
+  assert.ok(
+    travellerErrors({ ...child, birthDate: "16/11/2014" }, s.date).birthDate,
+  );
+  assert.ok(
+    travellerErrors({ ...infant, birthDate: "16/11/2024" }, s.date).birthDate,
+  );
+  const api = createReservationService(() => 1000, 2);
+  api.reserve("a", s, [flights[0]]);
+  assert.throws(() => api.reserve("b", draft.search, [flights[0]]), /Không đủ/);
+  const mix = [
+    { ...flights[0], cabin: "Phổ thông" },
+    { ...flights[0], cabin: "Thương gia" },
+  ];
+  assert.equal(
+    quote({ ...s, type: "round-trip" }, mix, [adult, child, infant]).fare,
+    10902000,
+  );
+});
+test("held bookings keep idempotency and original expiry after adapter reload", async () => {
+  const storage = memory();
+  const input = { ...payload(), expiresAt: new Date(1000000).toISOString() };
+  const first = createMockBookingService(storage, () => 1000);
+  const original = await first.create("u1", input, "same-hold");
+  const restarted = createMockBookingService(storage, () => 2000);
+  assert.equal(
+    (await restarted.create("u1", input, "same-hold")).id,
+    original.id,
+  );
+});
+
+test("one reservation cannot create two bookings with different retry keys", async () => {
+  const api = createMockBookingService(memory(), () => 1000);
+  const input = {
+    ...payload(),
+    reservationId: "hold-one",
+    expiresAt: new Date(1000000).toISOString(),
+  };
+  const a = await api.create("u1", input, "key-a");
+  const b = await api.create("u1", input, "key-b");
+  assert.equal(a.id, b.id);
+  assert.equal((await api.list("u1")).length, 1);
+  await assert.rejects(
+    api.create("u1", { ...input, email: "changed@example.com" }, "key-c"),
+    /thay đổi/,
+  );
 });

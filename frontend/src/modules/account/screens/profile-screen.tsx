@@ -122,36 +122,6 @@ export default function ProfileScreen() {
           </Row>
         </Card>
       </Tap>
-      {user && (
-        <Button
-          title="Đặt chỗ của tôi"
-          onPress={() => router.push("/bookings")}
-        />
-      )}
-      {b.receipt ? (
-        <Tap onPress={() => router.push("/booking")}>
-          <Card>
-            <Label weight="semibold">
-              Đặt vé gần nhất · {b.receipt.reference}
-            </Label>
-            <Label size={12} muted>
-              Xem vé mẫu và chi tiết hành trình
-            </Label>
-          </Card>
-        </Tap>
-      ) : (
-        <Card>
-          <Label weight="semibold">Chuyến đi đang chờ bạn</Label>
-          <Label size={13} muted>
-            Khám phá điểm đến và bắt đầu đặt chuyến bay đầu tiên.
-          </Label>
-          <Tap onPress={() => router.navigate("/")}>
-            <Label color={c.primary} weight="semibold">
-              Tìm chuyến bay
-            </Label>
-          </Tap>
-        </Card>
-      )}
       <Tap onPress={() => router.push("/help")}>
         <Label color={c.primary} weight="semibold">
           Trợ giúp & thông tin bản mẫu
@@ -168,10 +138,6 @@ export default function ProfileScreen() {
           />
         </View>
       )}
-      <Notice>
-        Tài khoản và phiên đăng nhập đang dùng dữ liệu mẫu, chỉ lưu trong phiên
-        sử dụng và được đặt lại khi tải lại ứng dụng.
-      </Notice>
     </Screen>
   );
 }

@@ -50,7 +50,8 @@ export default function LoginScreen() {
       : 0;
 
   const destinations = {
-    detail: "/detail",
+    detail: "/results",
+    "flight-selection": "/results",
     results: "/results",
     traveller: "/traveller",
     baggage: "/baggage",
@@ -64,7 +65,15 @@ export default function LoginScreen() {
     returnTo && Object.hasOwn(destinations, returnTo)
       ? destinations[returnTo as keyof typeof destinations]
       : "/";
-  if (session) return <Redirect href={destination} />;
+  const resumeFlight = returnTo === "flight-selection" || returnTo === "detail";
+  useEffect(() => {
+    if (session && resumeFlight)
+      router.dismissTo({
+        pathname: "/results",
+        params: { resumeSelection: "1" },
+      });
+  }, [session, resumeFlight]);
+  if (session) return resumeFlight ? null : <Redirect href={destination} />;
 
   const submit = async () => {
     if (pending.current || remaining > 0) return;

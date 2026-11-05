@@ -1,3 +1,4 @@
+import { passengerSummary } from "@/modules/booking/services/booking-rules";
 import { useState } from "react";
 import { View } from "react-native";
 import { Image } from "expo-image";
@@ -7,7 +8,6 @@ import { airport } from "@/modules/flights/data/airports";
 import { dateLabel, validDate } from "@/shared/utils/date";
 import { tripLabel } from "@/modules/flights/utils/trip";
 import { type TripType } from "@/modules/flights/types";
-import { assets } from "@/shared/assets";
 import { ActionBar } from "@/modules/booking/components/action-bar";
 import { Divider, Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
@@ -32,27 +32,31 @@ export default function SearchScreen() {
       (!validDate(s.secondDate) || s.secondDate < s.date)
     )
       return setError("Ngày bay tiếp theo phải từ ngày khởi hành trở đi.");
-    if (!Number.isInteger(s.count) || s.count < 1 || s.count > 4)
-      return setError("Chọn từ 1 đến 4 người lớn.");
+    if (
+      !Number.isInteger(s.count) ||
+      s.count < 1 ||
+      s.count + (s.children ?? 0) > 4 ||
+      (s.infants ?? 0) > s.count
+    )
+      return setError(
+        "Chọn tối đa 4 khách có ghế riêng, em bé không nhiều hơn người lớn.",
+      );
     setError("");
     b.startSearch();
     router.push("/results");
   };
   return (
     <Screen
-      title="Mua vé"
-      right={
-        <Tap label="Tài khoản SkyGo" onPress={() => router.push("/profile")}>
-          <Icon name="home-design-imgCircleUserRound" size={21} />
-        </Tap>
-      }
+      design
+      title="SkyGo"
+      home
       footer={<ActionBar title="Tìm chuyến bay" onPress={search} />}
     >
       <View style={{ gap: space.sm }}>
         <Label size={30} weight="bold">
           Bạn muốn đi đâu?
         </Label>
-        <Label muted>Hành trình mới, khởi đầu thật dễ dàng.</Label>
+        <Label muted>Hành trình mới, thật dễ dàng.</Label>
       </View>
       <Row
         style={{
@@ -150,27 +154,18 @@ export default function SearchScreen() {
           onPress={() => select("secondDate")}
         />
       )}
-      <Row style={{ alignItems: "flex-start" }}>
-        <SelectField
-          half
-          label="Hành khách"
-          value={`${s.count} người lớn`}
-          onPress={() => select("count")}
-        />
-        <SelectField
-          half
-          label="Hạng ghế"
-          value={s.cabin}
-          onPress={() => select("cabin")}
-        />
-      </Row>
+      <SelectField
+        label="Hành khách"
+        value={passengerSummary(s)}
+        onPress={() => select("count")}
+      />
       <Row
         style={{
           backgroundColor: c.surface,
           borderRadius: radius.lg,
           overflow: "hidden",
           padding: 14,
-          height: 108,
+          minHeight: 90,
           alignItems: "flex-start",
         }}
       >
@@ -182,14 +177,14 @@ export default function SearchScreen() {
             Hà Nội đang chờ bạn.
           </Label>
           <Label size={12} muted>
-            Một tìm kiếm, vạn hành trình.
+            Một lần tìm, muôn hành trình.
           </Label>
         </View>
         <Image
-          source={assets["home-design-imgNewYorkSkyline"]}
-          style={{ width: 100, height: 108, borderRadius: 10 }}
+          source={require("../../../../assets/hoan-kiem-lake.jpg")}
+          style={{ width: 72, aspectRatio: 1, borderRadius: 10, flexShrink: 0 }}
           contentFit="cover"
-          accessibilityLabel="Đường chân trời New York"
+          accessibilityLabel="Hồ Gươm Hà Nội"
         />
       </Row>
       {error ? <Notice error>{error}</Notice> : null}

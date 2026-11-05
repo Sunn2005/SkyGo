@@ -28,7 +28,7 @@ export default function SavedScreen() {
                 onPress={() => {
                   b.startSearch();
                   b.setCandidate(f);
-                  router.push("/detail");
+                  router.push("/results");
                 }}
                 style={{ flex: 1 }}
               >

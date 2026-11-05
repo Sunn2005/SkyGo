@@ -4,6 +4,7 @@ export type AirportCode = (typeof airports)[number]["code"];
 export type TripType = "one-way" | "round-trip";
 export type Cabin = "Phổ thông" | "Thương gia";
 export type Flight = {
+  cabin?: Cabin;
   id: string;
   airline: string;
   number: string;
@@ -20,7 +21,9 @@ export type Search = {
   to: AirportCode;
   date: string;
   secondDate: string;
-  count: number;
+  count: number; // Adults; children and lap infants are separate.
+  children?: number;
+  infants?: number;
   cabin: Cabin;
 };
 export type Leg = { from: AirportCode; to: AirportCode; date: string };

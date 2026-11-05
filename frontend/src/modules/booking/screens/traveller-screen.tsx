@@ -1,19 +1,24 @@
+import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
 import { useState } from "react";
 import { View } from "react-native";
 import { Host, Picker } from "@expo/ui";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
-import { bookingErrors } from "../services/booking-rules";
+import { bookingErrors, isDomestic } from "../services/booking-rules";
 import { ActionBar } from "@/modules/booking/components/action-bar";
+import { DateField } from "@/shared/components/date-field";
+import { ChoiceField } from "@/shared/components/choice-field";
 import { Field } from "@/shared/components/fields";
-import { Icon, Label, Notice, Row } from "@/shared/components/ui";
+import { Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { TripSummary } from "@/modules/booking/components/trip-summary";
 import { colors as c, space } from "@/shared/theme";
 
 export default function TravellerScreen() {
   const b = useBooking();
+  const { stackFields, stackDates } = useResponsiveLayout();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const [confirmed, setConfirmed] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (b.selected.length !== b.legs.length) return <Redirect href="/" />;
   const validate = () => {
@@ -25,51 +30,116 @@ export default function TravellerScreen() {
       b.phone,
     );
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length || !confirmed) return;
+    b.setPassengersConfirmed(true);
     b.setEmail(b.email.trim());
     b.setPhone(b.phone.trim());
     if (returnTo === "payment") router.back();
-    else router.push("/baggage");
+    else router.push("/payment");
   };
   return (
     <Screen
+      design
       title="Thông tin hành khách"
       step={0}
       footer={
         <ActionBar
-          title={returnTo ? "Lưu thông tin" : "Tiếp tục đến hành lý"}
+          title={returnTo ? "Lưu thông tin" : "Xác nhận"}
           price={returnTo ? b.total : b.fare}
+          disabled={!confirmed}
           onPress={validate}
         />
       }
     >
       <TripSummary />
+      <Label size={17} weight="bold">
+        Thông tin hành khách
+      </Label>
       {b.travellers.map((p, i) => (
-        <View key={i} style={{ gap: 14 }}>
+        <View
+          key={i}
+          style={{
+            gap: 14,
+            backgroundColor: "white",
+            padding: 14,
+            borderRadius: 10,
+          }}
+        >
           <View style={{ gap: space.xs }}>
             <Row style={{ gap: space.sm }}>
               <Icon name="6-6816-imgUserRound" size={18} />
               <Label size={18} weight="semibold">
-                Hành khách {i + 1} · Người lớn
+                Hành khách {i + 1} ·{" "}
+                {p.kind === "infant"
+                  ? "Em bé · Không có ghế riêng"
+                  : p.kind === "child"
+                    ? "Trẻ em"
+                    : "Người lớn"}
               </Label>
             </Row>
             <Label size={12} muted>
               Nhập họ tên chính xác như trên CCCD hoặc hộ chiếu.
             </Label>
           </View>
-          <Row style={{ alignItems: "flex-start" }}>
+          {(p.kind ?? "adult") === "adult" && (
+            <Row>
+              {(["Ông", "Bà", "Cô/Chị"] as const).map((title) => (
+                <Tap
+                  key={title}
+                  selected={p.title === title}
+                  onPress={() => b.updateTraveller(i, { title })}
+                  style={{
+                    flex: 1,
+                    borderRadius: 8,
+                    padding: 8,
+                    backgroundColor: p.title === title ? c.tint : c.surface,
+                    alignItems: "center",
+                  }}
+                >
+                  <Label color={p.title === title ? c.primary : c.ink}>
+                    {title}
+                  </Label>
+                </Tap>
+              ))}
+            </Row>
+          )}
+          {p.kind === "infant" && (
+            <View style={{ gap: 6 }}>
+              <Label size={12}>Người lớn đi kèm · Không có ghế riêng</Label>
+              <Host matchContents colorScheme="light" seedColor={c.primary}>
+                <Picker
+                  selectedValue={p.companionIndex ?? 0}
+                  onValueChange={(value) =>
+                    b.updateTraveller(i, { companionIndex: value })
+                  }
+                >
+                  {b.travellers.map((adult, index) =>
+                    (adult.kind ?? "adult") === "adult" ? (
+                      <Picker.Item
+                        key={index}
+                        value={index}
+                        label={
+                          `${adult.lastName} ${adult.firstName}`.trim() ||
+                          `Người lớn ${index + 1}`
+                        }
+                      />
+                    ) : null,
+                  )}
+                </Picker>
+              </Host>
+              {!!errors[`${i}-companionIndex`] && (
+                <Notice error>{errors[`${i}-companionIndex`]}</Notice>
+              )}
+            </View>
+          )}
+          <Row
+            style={{
+              alignItems: "stretch",
+              flexDirection: stackFields ? "column" : "row",
+            }}
+          >
             <Field
-              half
-              label="Họ"
-              value={p.lastName}
-              onChangeText={(value) =>
-                b.updateTraveller(i, { lastName: value })
-              }
-              error={errors[`${i}-lastName`]}
-              autoComplete="family-name"
-            />
-            <Field
-              half
+              half={!stackFields}
               label="Tên đệm và tên"
               value={p.firstName}
               onChangeText={(value) =>
@@ -78,46 +148,40 @@ export default function TravellerScreen() {
               error={errors[`${i}-firstName`]}
               autoComplete="given-name"
             />
-          </Row>
-          <Row style={{ alignItems: "flex-start" }}>
             <Field
-              half
-              label="Ngày sinh (NN/TT/NNNN)"
+              half={!stackFields}
+              label="Họ"
+              value={p.lastName}
+              onChangeText={(value) =>
+                b.updateTraveller(i, { lastName: value })
+              }
+              error={errors[`${i}-lastName`]}
+              autoComplete="family-name"
+            />
+          </Row>
+          <Row
+            style={{
+              alignItems: "stretch",
+              flexDirection: stackDates ? "column" : "row",
+            }}
+          >
+            <DateField
+              half={!stackDates}
+              label="Ngày sinh"
               value={p.birthDate}
               onChangeText={(value) =>
                 b.updateTraveller(i, { birthDate: value })
               }
               error={errors[`${i}-birthDate`]}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
+              pastOnly
             />
-            <View style={{ flex: 1, gap: 6 }}>
-              <Label size={12} muted>
-                Giới tính
-              </Label>
-              <View
-                style={{
-                  minHeight: 46,
-                  borderWidth: 1,
-                  borderColor: c.line,
-                  borderRadius: 8,
-                  justifyContent: "center",
-                }}
-              >
-                <Host matchContents colorScheme="light" seedColor={c.primary}>
-                  <Picker
-                    selectedValue={p.gender}
-                    onValueChange={(value) =>
-                      b.updateTraveller(i, { gender: value })
-                    }
-                  >
-                    <Picker.Item label="Nam" value="Nam" />
-                    <Picker.Item label="Nữ" value="Nữ" />
-                    <Picker.Item label="Khác" value="Khác" />
-                  </Picker>
-                </Host>
-              </View>
-            </View>
+            <ChoiceField
+              half={!stackDates}
+              label="Giới tính"
+              value={p.gender}
+              options={["Nam", "Nữ", "Khác"] as const}
+              onChange={(gender) => b.updateTraveller(i, { gender })}
+            />
           </Row>
           <Label size={12} muted>
             Loại giấy tờ
@@ -132,51 +196,84 @@ export default function TravellerScreen() {
                 })
               }
             >
-              <Picker.Item label="CCCD" value="cccd" />
+              {isDomestic(b.search) && (
+                <Picker.Item label="CCCD" value="cccd" />
+              )}
               <Picker.Item label="Hộ chiếu" value="passport" />
             </Picker>
           </Host>
-          <Field
-            label={p.documentType === "cccd" ? "Số CCCD" : "Số hộ chiếu"}
-            value={p.documentNumber}
-            keyboardType={p.documentType === "cccd" ? "number-pad" : "default"}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            maxLength={12}
-            onChangeText={(value) =>
-              b.updateTraveller(i, { documentNumber: value.toUpperCase() })
-            }
-            error={errors[`${i}-documentNumber`]}
-          />
-          {p.documentType === "passport" && (
+          {!!errors[`${i}-documentType`] && (
+            <Notice error>{errors[`${i}-documentType`]}</Notice>
+          )}
+          {p.documentType === "passport" ? (
             <>
-              <Field
-                label="Quốc tịch"
-                value={p.nationality}
-                onChangeText={(value) =>
-                  b.updateTraveller(i, { nationality: value })
-                }
-                error={errors[`${i}-nationality`]}
-              />
-              <Field
-                label="Quốc gia cấp"
-                value={p.issuingCountry}
-                onChangeText={(value) =>
-                  b.updateTraveller(i, { issuingCountry: value })
-                }
-                error={errors[`${i}-issuingCountry`]}
-              />
-              <Field
-                label="Ngày hết hạn (NN/TT/NNNN)"
-                value={p.documentExpiry}
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-                onChangeText={(value) =>
-                  b.updateTraveller(i, { documentExpiry: value })
-                }
-                error={errors[`${i}-documentExpiry`]}
-              />
+              <Row
+                style={{
+                  alignItems: "stretch",
+                  flexDirection: stackFields ? "column" : "row",
+                }}
+              >
+                <Field
+                  half={!stackFields}
+                  label="Quốc tịch"
+                  value={p.nationality}
+                  onChangeText={(value) =>
+                    b.updateTraveller(i, { nationality: value })
+                  }
+                  error={errors[`${i}-nationality`]}
+                />
+                <Field
+                  half={!stackFields}
+                  label="Số hộ chiếu"
+                  value={p.documentNumber}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={12}
+                  onChangeText={(value) =>
+                    b.updateTraveller(i, {
+                      documentNumber: value.toUpperCase(),
+                    })
+                  }
+                  error={errors[`${i}-documentNumber`]}
+                />
+              </Row>
+              <Row
+                style={{
+                  alignItems: "stretch",
+                  flexDirection: stackFields ? "column" : "row",
+                }}
+              >
+                <DateField
+                  half={!stackFields}
+                  label="Ngày hết hạn (NN/TT/NNNN)"
+                  value={p.documentExpiry}
+                  onChangeText={(value) =>
+                    b.updateTraveller(i, { documentExpiry: value })
+                  }
+                  error={errors[`${i}-documentExpiry`]}
+                />
+                <Field
+                  half={!stackFields}
+                  label="Quốc gia cấp"
+                  value={p.issuingCountry}
+                  onChangeText={(value) =>
+                    b.updateTraveller(i, { issuingCountry: value })
+                  }
+                  error={errors[`${i}-issuingCountry`]}
+                />
+              </Row>
             </>
+          ) : (
+            <Field
+              label="Số CCCD"
+              value={p.documentNumber}
+              keyboardType="number-pad"
+              maxLength={12}
+              onChangeText={(value) =>
+                b.updateTraveller(i, { documentNumber: value })
+              }
+              error={errors[`${i}-documentNumber`]}
+            />
           )}
         </View>
       ))}
@@ -185,7 +282,8 @@ export default function TravellerScreen() {
           Thông tin liên hệ
         </Label>
         <Label size={12} muted>
-          Email và số điện thoại nhận thông tin chuyến bay.
+          Email và số điện thoại được điền từ tài khoản đăng nhập. Bạn có thể
+          chỉnh sửa để nhận thông tin chuyến bay.
         </Label>
       </View>
       <Field
@@ -211,10 +309,32 @@ export default function TravellerScreen() {
           Kiểm tra các mục được đánh dấu phía trên rồi thử lại.
         </Notice>
       )}
-      <Notice icon="6-6816-imgShieldCheck">
-        Đây là bản mẫu. Hãy dùng thông tin giả để trải nghiệm; booking được lưu
-        trên thiết bị theo tài khoản.
-      </Notice>
+      <Tap
+        label="Xác nhận thông tin hành khách chính xác"
+        selected={confirmed}
+        onPress={() => setConfirmed((value) => !value)}
+      >
+        <Row
+          style={{
+            alignItems: "stretch",
+            flexDirection: stackFields ? "column" : "row",
+          }}
+        >
+          <Label size={24} color={c.primary}>
+            {confirmed ? "☑" : "☐"}
+          </Label>
+          <View style={{ flex: 1, gap: 6 }}>
+            <Label size={13}>
+              Tôi xác nhận thông tin đã nhập là hoàn toàn chính xác và khớp với
+              giấy tờ tùy thân / hộ chiếu. *
+            </Label>
+            <Label size={12} muted>
+              Họ tên khớp với CCCD / hộ chiếu, nếu sai tôi xin chịu hoàn toàn
+              trách nhiệm.
+            </Label>
+          </View>
+        </Row>
+      </Tap>
     </Screen>
   );
 }

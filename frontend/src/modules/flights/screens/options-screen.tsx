@@ -1,23 +1,23 @@
 import { useState } from "react";
-import { Platform, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Host, Picker } from "@expo/ui";
-import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import { FlightCalendar, localDateISO } from "../components/flight-calendar";
 import { router, useLocalSearchParams } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
-import { airports } from "@/modules/flights/data/airports";
+import { continents, searchAirports } from "@/modules/flights/data/airports";
 import { dateLabel, validDate } from "@/shared/utils/date";
 import { type Cabin } from "@/modules/flights/types";
 import { ActionBar } from "@/modules/booking/components/action-bar";
 import { Field } from "@/shared/components/fields";
 import { Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
-import { colors as c, radius, space } from "@/shared/theme";
+import { colors as c } from "@/shared/theme";
 
 const titles: Record<string, string> = {
   from: "Chọn điểm đi",
   to: "Chọn điểm đến",
   date: "Ngày khởi hành",
-  secondDate: "Ngày bay tiếp theo",
+  secondDate: "Ngày về",
   count: "Số hành khách",
   cabin: "Hạng ghế",
 };
@@ -27,23 +27,44 @@ export default function OptionsScreen() {
   const isDate = field === "date" || field === "secondDate";
   const isAirport = ["from", "to"].includes(field);
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState(
-    field === "secondDate" ? search.secondDate : search.date,
-  );
-  const [quickStart] = useState(
-    field === "secondDate" ? search.secondDate : search.date,
-  );
+  const matchingAirports = searchAirports(query);
+  const [expandedContinent, setExpandedContinent] = useState<
+    (typeof continents)[number] | null
+  >(null);
+  const [collapsedSearch, setCollapsedSearch] = useState<
+    Partial<Record<(typeof continents)[number], boolean>>
+  >({});
+  const searching = query.trim().length > 0;
+  const [today] = useState(() => localDateISO(new Date()));
+  const minDate =
+    field === "secondDate" && search.date > today ? search.date : today;
+  const [draft, setDraft] = useState(() => {
+    const date = field === "secondDate" ? search.secondDate : search.date;
+    return validDate(date) && date >= minDate ? date : minDate;
+  });
   const [error, setError] = useState("");
   const [count, setCount] = useState(search.count);
+  const [children, setChildren] = useState(search.children ?? 0);
+  const [infants, setInfants] = useState(search.infants ?? 0);
   const [cabin, setCabin] = useState<Cabin>(search.cabin);
   const save = () => {
     if (isDate) {
-      if (!validDate(draft))
-        return setError(
-          "Ngày không hợp lệ. Nhập theo định dạng NNNN-TT-NN, ví dụ 2026-11-16.",
-        );
-      setSearch((s) => ({ ...s, [field]: draft }));
-    } else if (field === "count") setSearch((s) => ({ ...s, count }));
+      const currentToday = localDateISO(new Date());
+      const minimum =
+        field === "secondDate" && search.date > currentToday
+          ? search.date
+          : currentToday;
+      if (!validDate(draft) || draft < minimum)
+        return setError("Vui lòng chọn ngày hợp lệ trên lịch.");
+      setSearch((s) => ({
+        ...s,
+        [field]: draft,
+        ...(field === "date" && s.secondDate < draft
+          ? { secondDate: draft }
+          : {}),
+      }));
+    } else if (field === "count")
+      setSearch((s) => ({ ...s, count, children, infants }));
     else if (field === "cabin") setSearch((s) => ({ ...s, cabin }));
     router.back();
   };
@@ -57,126 +78,141 @@ export default function OptionsScreen() {
       {isAirport && (
         <>
           <Field
-            label="Tìm sân bay hoặc thành phố"
-            placeholder="Tên thành phố, mã sân bay…"
+            label="Tìm thành phố hoặc sân bay"
+            placeholder="Tìm thành phố hoặc sân bay"
             value={query}
-            onChangeText={setQuery}
-            autoFocus
+            onChangeText={(value) => {
+              setQuery(value);
+              setCollapsedSearch({});
+            }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
           />
-          {airports
-            .filter((a) =>
-              `${a.city} ${a.code} ${a.name}`
-                .normalize("NFD")
-                .replace(/[\u0300-\u036f]/g, "")
-                .toLowerCase()
-                .includes(
-                  query
-                    .normalize("NFD")
-                    .replace(/[\u0300-\u036f]/g, "")
-                    .toLowerCase(),
-                ),
-            )
-            .map((a) => (
-              <Tap
-                key={a.code}
-                label={`${a.city}, ${a.code}`}
-                onPress={() => {
-                  setSearch((s) => ({ ...s, [field]: a.code }));
-                  router.back();
-                }}
-                style={{
-                  borderWidth: 1,
-                  borderColor: c.line,
-                  padding: space.lg,
-                  borderRadius: radius.md,
-                }}
-              >
-                <Row>
-                  <Icon name="home-design-imgPlane" />
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <Label weight="semibold">{a.city}</Label>
-                    <Label size={12} muted>
-                      {a.name}
+          {continents.map((continent) => {
+            const items = matchingAirports.filter(
+              (a) => a.continent === continent,
+            );
+            if (!items.length) return null;
+            const expanded = searching
+              ? !collapsedSearch[continent]
+              : expandedContinent === continent;
+            const active = searching || expanded;
+            return (
+              <View key={continent} style={{ gap: 4 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${expanded ? "Thu gọn" : "Mở rộng"} ${continent}`}
+                  accessibilityState={{ expanded }}
+                  onPress={() => {
+                    if (searching)
+                      setCollapsedSearch((current) => ({
+                        ...current,
+                        [continent]: expanded,
+                      }));
+                    else setExpandedContinent(expanded ? null : continent);
+                  }}
+                  style={({ pressed }) => ({
+                    minHeight: 44,
+                    justifyContent: "center",
+                    opacity: pressed ? 0.65 : 1,
+                  })}
+                >
+                  <Row style={{ justifyContent: "space-between" }}>
+                    <Label
+                      size={15}
+                      weight="semibold"
+                      color={active ? c.primary : c.muted}
+                    >
+                      • {continent}
                     </Label>
-                  </View>
-                  <Label weight="semibold" color={c.primary}>
-                    {a.code}
-                  </Label>
-                </Row>
-              </Tap>
-            ))}
-          {!!query &&
-            !airports.some((a) =>
-              `${a.city} ${a.code} ${a.name}`
-                .toLowerCase()
-                .includes(query.toLowerCase()),
-            ) && (
-              <Label size={12} muted>
-                Thử tìm bằng mã sân bay: LHR, JFK, SGN, HAN, DAD hoặc SIN.
+                    <View
+                      style={{
+                        transform: [{ rotate: expanded ? "180deg" : "0deg" }],
+                      }}
+                    >
+                      <Icon name="home-design-imgChevronDown" size={16} />
+                    </View>
+                  </Row>
+                </Pressable>
+                {expanded &&
+                  items.map((a) => (
+                    <Tap
+                      key={a.code}
+                      label={`${a.name}, ${a.city}, ${a.code}`}
+                      selected={
+                        a.code === (field === "from" ? search.from : search.to)
+                      }
+                      onPress={() => {
+                        setSearch((s) => ({ ...s, [field]: a.code }));
+                        router.back();
+                      }}
+                      style={{
+                        paddingVertical: 12,
+                        borderBottomWidth: 1,
+                        borderBottomColor: c.line,
+                      }}
+                    >
+                      <Row>
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Label size={14} weight="semibold">
+                            {a.name}
+                          </Label>
+                          <Label size={12} muted>
+                            {a.city} · {a.country}
+                          </Label>
+                        </View>
+                        <Label size={14} weight="semibold" color={c.primary}>
+                          {a.code}
+                        </Label>
+                      </Row>
+                    </Tap>
+                  ))}
+              </View>
+            );
+          })}
+          {!matchingAirports.length && (
+            <View style={{ paddingVertical: 24, gap: 8 }}>
+              <Label weight="semibold">Không tìm thấy sân bay</Label>
+              <Label size={13} muted>
+                Thử tên thành phố, tên sân bay hoặc mã như SGN, CDG, SYD.
               </Label>
-            )}
+            </View>
+          )}
         </>
       )}
       {isDate && (
         <>
-          <Label size={20} weight="semibold">
-            Chọn ngày cho hành trình
+          <Label size={22} weight="semibold">
+            {field === "secondDate" ? "Chọn ngày về" : "Chọn ngày khởi hành"}
           </Label>
-          {Platform.OS !== "web" && (
-            <DateTimePicker
-              value={
-                new Date((validDate(draft) ? draft : quickStart) + "T12:00:00")
-              }
-              mode="date"
-              display="inline"
-              presentation="inline"
-              locale="vi_VN"
-              themeVariant="light"
-              accentColor={c.primary}
-              minimumDate={
-                field === "secondDate"
-                  ? new Date(search.date + "T00:00:00")
-                  : new Date()
-              }
-              onValueChange={(_, date) => {
-                setDraft(
-                  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
-                );
-              }}
-            />
-          )}
-          <Field
-            label="Ngày bay (NNNN-TT-NN)"
+          <Label size={13} muted>
+            {field === "secondDate"
+              ? `Ngày về từ ${dateLabel(search.date)} trở đi.`
+              : "Chạm vào ngày trên lịch để chọn ngày bay."}
+          </Label>
+          <FlightCalendar
             value={draft}
-            onChangeText={setDraft}
-            placeholder="2026-11-16"
-            keyboardType="numbers-and-punctuation"
-            autoCapitalize="none"
+            minDate={minDate}
+            onChange={(value) => {
+              setDraft(value);
+              setError("");
+            }}
+            rangeStart={
+              search.type === "round-trip"
+                ? field === "secondDate"
+                  ? search.date
+                  : draft
+                : undefined
+            }
+            rangeEnd={
+              search.type === "round-trip"
+                ? field === "secondDate"
+                  ? draft
+                  : search.secondDate
+                : undefined
+            }
           />
-          <Label size={12} muted>
-            Hoặc chọn nhanh một ngày:
-          </Label>
-          {Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(quickStart + "T12:00:00");
-            d.setDate(d.getDate() + i);
-            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            return (
-              <Tap
-                key={iso}
-                selected={draft === iso}
-                onPress={() => setDraft(iso)}
-                style={{
-                  padding: space.md,
-                  borderRadius: radius.sm,
-                  backgroundColor: draft === iso ? c.tint : c.surface,
-                }}
-              >
-                <Label color={draft === iso ? c.primary : c.ink}>
-                  {dateLabel(iso)}
-                </Label>
-              </Tap>
-            );
-          })}
           {!!error && <Notice error>{error}</Notice>}
         </>
       )}
@@ -185,21 +221,65 @@ export default function OptionsScreen() {
           <Label size={20} weight="semibold">
             Ai sẽ cùng bạn bay?
           </Label>
-          <Label muted>
-            Người lớn từ 12 tuổi. Bản mẫu hỗ trợ tối đa 4 người trong một đặt
-            vé.
+          <Label size={12} muted>
+            Tối đa 4 khách có ghế riêng. Em bé ngồi cùng người lớn, không cần
+            ghế riêng.
           </Label>
-          <Host matchContents colorScheme="light" seedColor={c.primary}>
-            <Picker
-              selectedValue={count}
-              onValueChange={setCount}
-              testID="passenger-count"
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <Picker.Item key={n} label={`${n} người lớn`} value={n} />
-              ))}
-            </Picker>
-          </Host>
+          {[
+            {
+              label: "Người lớn",
+              hint: "Từ 12 tuổi",
+              value: count,
+              min: 1,
+              max: 4 - children,
+              change: (n: number) => {
+                setCount(n);
+                setInfants((v) => Math.min(v, n));
+              },
+            },
+            {
+              label: "Trẻ em",
+              hint: "Từ 2 đến dưới 12 tuổi",
+              value: children,
+              min: 0,
+              max: 4 - count,
+              change: setChildren,
+            },
+            {
+              label: "Em bé",
+              hint: "Dưới 2 tuổi · Ngồi cùng người lớn",
+              value: infants,
+              min: 0,
+              max: count,
+              change: setInfants,
+            },
+          ].map((item) => (
+            <Row key={item.label}>
+              <View style={{ flex: 1 }}>
+                <Label weight="semibold">{item.label}</Label>
+                <Label size={12} muted>
+                  {item.hint}
+                </Label>
+              </View>
+              <Tap
+                label={`Giảm ${item.label}`}
+                disabled={item.value <= item.min}
+                onPress={() => item.change(item.value - 1)}
+                style={{ width: 44, alignItems: "center" }}
+              >
+                <Label size={24}>−</Label>
+              </Tap>
+              <Label>{item.value}</Label>
+              <Tap
+                label={`Tăng ${item.label}`}
+                disabled={item.value >= item.max}
+                onPress={() => item.change(item.value + 1)}
+                style={{ width: 44, alignItems: "center" }}
+              >
+                <Label size={24}>+</Label>
+              </Tap>
+            </Row>
+          ))}
         </>
       )}
       {field === "cabin" && (

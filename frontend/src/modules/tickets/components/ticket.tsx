@@ -1,78 +1,75 @@
 import { View } from "react-native";
 import type { BookingSnapshot } from "@/modules/booking/types";
-import { dateLabel } from "@/shared/utils/date";
 import { fullName } from "@/modules/booking/utils/traveller";
 import { getLegs } from "@/modules/flights/utils/trip";
 import { includedBagWeight } from "@/modules/booking/services/booking-rules";
 import { money } from "@/shared/utils/format";
-import {
-  Badge,
-  Card,
-  Divider,
-  Label,
-  Row,
-  SummaryRow,
-} from "@/shared/components/ui";
-import { FlightTimes } from "@/modules/flights/components/flight-times";
-import { space } from "@/shared/theme";
-
+import { Label, Row } from "@/shared/components/ui";
+import { Journey, InfoRow } from "@/modules/booking/components/design";
+import { colors as c } from "@/shared/theme";
 export function Ticket({ receipt: r }: { receipt: BookingSnapshot }) {
   const legs = getLegs(r.search);
   return (
-    <Card style={{ gap: 15 }}>
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: c.line,
+        borderRadius: 12,
+        padding: 14,
+        gap: 16,
+      }}
+    >
       <Row>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Label size={11} muted>
-            MÃ ĐẶT VÉ MẪU
+        <View style={{ flex: 1, gap: 3 }}>
+          <Label size={10} muted>
+            MÃ ĐẶT CHỖ
           </Label>
-          <Label selectable size={21} weight="bold">
+          <Label size={22} weight="bold" selectable>
             {r.reference}
           </Label>
         </View>
-        <Badge>Đã xác nhận</Badge>
+        <Label size={11} color={c.primary}>
+          Đã xác nhận
+        </Label>
       </Row>
-      <Divider />
-      {legs.map((leg, i) => (
-        <View key={i} style={{ gap: space.md }}>
-          {legs.length > 1 && (
-            <Label size={12} weight="semibold">
-              Chặng {i + 1}
-            </Label>
-          )}
-          <FlightTimes
-            flight={r.selected[i]}
-            leg={leg}
-            plane="6-7220-imgPlane"
-          />
-          <Label size={12} muted>
-            {dateLabel(leg.date)} · {r.selected[i].airline}{" "}
-            {r.selected[i].number}
+      <View style={{ height: 1, backgroundColor: c.line }} />
+      {r.selected.map((flight, i) => (
+        <View key={i} style={{ gap: 6 }}>
+          <Journey flight={flight} leg={legs[i]} />
+          <Label size={11} muted>
+            {flight.cabin ?? r.search.cabin} · SkyGo
           </Label>
-          <Divider />
         </View>
       ))}
-      {r.travellers.map((p, i) => (
-        <View key={i} style={{ gap: space.sm }}>
-          <SummaryRow
-            label={`Hành khách ${r.travellers.length > 1 ? i + 1 : ""}`}
-            value={fullName(p)}
-          />
-          <SummaryRow label="Hạng vé" value={r.search.cabin} />
-          <SummaryRow
-            label="Hành lý đã gồm / chặng"
-            value={`Xách tay 10 kg + 1 × ${includedBagWeight(r.search.cabin)} kg`}
-          />
-          {legs.map((_, l) => (
-            <SummaryRow
-              key={l}
-              label={`Mua thêm · ${l === 0 ? "Lượt đi" : "Lượt về"}`}
-              value={`${p.extraBags[l] ?? 0} kiện × 23 kg`}
-            />
-          ))}
-        </View>
-      ))}
-      <Divider />
-      <SummaryRow label="Đã trả mẫu · PayOS" value={money(r.total)} bold />
-    </Card>
+      <InfoRow
+        label="Hành khách"
+        value={r.travellers.map(fullName).join(", ")}
+      />
+      <InfoRow label="Hành lý xách tay" value="10 kg" />
+      <InfoRow
+        label="Ký gửi miễn cước"
+        value={r.selected
+          .map(
+            (f) =>
+              `1 kiện × ${includedBagWeight(f.cabin ?? r.search.cabin)} kg`,
+          )
+          .join(" · ")}
+      />
+      {r.travellers.some((p) => p.kind === "infant") && (
+        <Label size={12} muted>
+          Em bé ngồi cùng người lớn, không có ghế riêng.
+        </Label>
+      )}
+      <InfoRow
+        label="Hành lý mua thêm"
+        value={`${r.travellers.reduce((n, p) => n + Object.values(p.extraBags).reduce((a, v) => a + v, 0), 0)} kiện`}
+      />
+      <View style={{ height: 1, backgroundColor: c.line }} />
+      <InfoRow
+        label="Đã thanh toán"
+        value={money(r.total)}
+        bold
+      />
+    </View>
   );
 }

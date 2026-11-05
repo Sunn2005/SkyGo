@@ -8,23 +8,32 @@ export function FlightTimes({
   flight,
   leg,
   plane = "6-6734-imgPlane1",
+  hideStops = false,
 }: {
   flight: Flight;
   leg: Leg;
   plane?: AssetKey;
+  hideStops?: boolean;
 }) {
   return (
-    <Row style={{ gap: space.md }}>
-      <View style={{ flex: 1, gap: space.xs }}>
-        <Label selectable size={26} weight="semibold">
+    <Row style={{ gap: 8 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: space.xs }}>
+        <Label
+          selectable
+          size={24}
+          weight="semibold"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
           {flight.departure}
         </Label>
-        <Label size={11} muted>
-          {leg.from} · {airport(leg.from).city}
+        <Label size={10} muted numberOfLines={1} adjustsFontSizeToFit>
+          {leg.from} · {leg.from === "SGN" ? "Sài Gòn" : airport(leg.from).city}
         </Label>
       </View>
-      <View style={{ flex: 1.25, gap: 5, alignItems: "center" }}>
-        <Label size={10} muted>
+      <View style={{ flex: 1.25, minWidth: 0, gap: 5, alignItems: "center" }}>
+        <Label size={10} muted style={{ textAlign: "center" }}>
           {flight.duration}
         </Label>
         <Row style={{ gap: 5 }}>
@@ -32,16 +41,22 @@ export function FlightTimes({
           <Icon name={plane} size={16} />
           <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
         </Row>
-        <Label size={10} color={c.primary}>
-          {flight.stops ? "1 điểm dừng" : "Bay thẳng"}
-        </Label>
       </View>
-      <View style={{ flex: 1, gap: space.xs, alignItems: "flex-end" }}>
-        <Label selectable size={26} weight="semibold">
+      <View
+        style={{ flex: 1, minWidth: 0, gap: space.xs, alignItems: "flex-end" }}
+      >
+        <Label
+          selectable
+          size={24}
+          weight="semibold"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
           {flight.arrival}
         </Label>
-        <Label size={11} muted>
-          {leg.to} · {airport(leg.to).city}
+        <Label size={10} muted numberOfLines={1} adjustsFontSizeToFit>
+          {leg.to} · {leg.to === "SGN" ? "Sài Gòn" : airport(leg.to).city}
         </Label>
       </View>
     </Row>

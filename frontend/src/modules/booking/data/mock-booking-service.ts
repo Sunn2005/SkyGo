@@ -70,8 +70,15 @@ export function createMockBookingService(
   } = {
     create: (owner, input, key) =>
       transact(owner, (all) => {
-        const { search, selected, travellers, email, phone } =
-          bookingInput(input);
+        const {
+          search,
+          selected,
+          travellers,
+          email,
+          phone,
+          expiresAt,
+          reservationId,
+        } = bookingInput(input);
         if (
           Object.keys(bookingErrors(search, selected, travellers, email, phone))
             .length
@@ -79,22 +86,35 @@ export function createMockBookingService(
           throw new Error(
             "Thông tin đặt chỗ chưa hợp lệ. Vui lòng kiểm tra hành khách và liên hệ.",
           );
+        if (
+          expiresAt &&
+          (!Number.isFinite(Date.parse(expiresAt)) ||
+            Date.parse(expiresAt) <= now())
+        )
+          throw new Error("Thời gian giữ chỗ đã hết.");
         const canonicalFlights = selected.map((f) => {
           const match = flights.find((item) => item.id === f.id);
           if (!match)
             throw new Error("Chuyến bay không còn phù hợp. Vui lòng chọn lại.");
-          return match;
+          return { ...match, ...(f.cabin ? { cabin: f.cabin } : {}) };
         });
         if (!key) throw new Error("Thiếu mã xác nhận thao tác.");
-        const fingerprint = JSON.stringify({
-          search,
-          selected: canonicalFlights,
-          travellers,
-          email,
-          phone,
-        });
+        const fingerprint = JSON.stringify(
+          bookingInput({
+            search,
+            selected: canonicalFlights,
+            travellers,
+            email,
+            phone,
+            ...(expiresAt ? { expiresAt } : {}),
+            ...(reservationId ? { reservationId } : {}),
+          }),
+        );
         const existing = all.find(
-          (b) => b.owner === owner && b.idempotencyKey === key,
+          (b) =>
+            b.owner === owner &&
+            (b.idempotencyKey === key ||
+              (reservationId && b.receipt.reservationId === reservationId)),
         );
         if (existing) {
           if (existing.fingerprint !== fingerprint)
@@ -103,9 +123,12 @@ export function createMockBookingService(
             );
           return existing;
         }
-        const reference = id("SG");
+        const bookingId = id("SG");
+        let reference = bookingId.slice(-6);
+        while (all.some((b) => b.receipt.reference === reference))
+          reference = id("SG").slice(-6);
         const booking: Booking = {
-          id: reference,
+          id: bookingId,
           owner,
           idempotencyKey: key,
           fingerprint,
@@ -113,7 +136,14 @@ export function createMockBookingService(
           createdAt: new Date(now()).toISOString(),
           payments: [],
           receipt: {
-            ...copy({ search, travellers, email, phone }),
+            ...copy({
+              search,
+              travellers,
+              email,
+              phone,
+              ...(expiresAt ? { expiresAt } : {}),
+              ...(reservationId ? { reservationId } : {}),
+            }),
             selected: copy(canonicalFlights),
             reference,
             ...quote(search, canonicalFlights, travellers),
@@ -126,12 +156,19 @@ export function createMockBookingService(
       transact(owner, (all) => {
         const booking = find(all, owner, bookingId);
         if (booking.status === "confirmed") return booking;
+        if (
+          booking.receipt.expiresAt &&
+          Date.parse(booking.receipt.expiresAt) <= now()
+        )
+          throw new Error("Giữ chỗ đã hết hạn. Vui lòng tìm lại chuyến bay.");
         if (!booking.payments.some((p) => p.status === "pending"))
           booking.payments.push({
             id: id("PAY"),
             status: "pending",
             createdAt: new Date(now()).toISOString(),
-            expiresAt: new Date(now() + 15 * 60000).toISOString(),
+            expiresAt:
+              booking.receipt.expiresAt ??
+              new Date(now() + 15 * 60000).toISOString(),
           });
         return booking;
       }),
@@ -150,6 +187,7 @@ export function createMockBookingService(
         if (payment.status !== "pending" || booking.status === "confirmed")
           return;
         payment.status = outcome;
+        payment.completedAt = new Date(now()).toISOString();
         if (outcome === "paid") booking.status = "confirmed";
       }),
   };

@@ -1,3 +1,4 @@
+import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
 import type { ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Stack } from "expo-router/stack";
@@ -14,6 +15,7 @@ export function Screen({
   right,
   home,
   onBack,
+  design = false,
 }: {
   children: ReactNode;
   title: string;
@@ -22,11 +24,13 @@ export function Screen({
   right?: ReactNode;
   home?: boolean;
   onBack?: () => void;
+  design?: boolean;
 }) {
   const inset = useSafeAreaInsets();
+  const { horizontalPadding } = useResponsiveLayout();
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: c.white }}
+      style={{ flex: 1, backgroundColor: design ? "#EEEEEE" : c.white }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={inset.top + 56}
     >
@@ -35,7 +39,7 @@ export function Screen({
           title,
           headerTitleAlign: "left",
           headerShadowVisible: false,
-          headerStyle: { backgroundColor: c.white },
+          headerStyle: { backgroundColor: design ? "#EEEEEE" : c.white },
           headerTintColor: c.ink,
           headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 18 },
           headerBackButtonDisplayMode: "minimal",
@@ -66,29 +70,33 @@ export function Screen({
                   <Icon name="6-6734-imgArrowLeft" size={22} />
                 </Tap>
               ),
-          headerRight: () => (
-            <View
-              style={{
-                paddingRight: Platform.OS === "web" ? space.xl : space.sm,
-              }}
-            >
-              {right ?? (
-                <Tap
-                  label="Trợ giúp đặt vé"
-                  onPress={() => router.push("/help")}
-                >
-                  <Icon name="6-6816-imgCircleHelp" size={21} />
-                </Tap>
-              )}
-            </View>
-          ),
+          headerRight:
+            design && !right
+              ? undefined
+              : () => (
+                  <View
+                    style={{
+                      paddingRight: Platform.OS === "web" ? space.xl : space.sm,
+                    }}
+                  >
+                    {right ??
+                      (design ? null : (
+                        <Tap
+                          label="Trợ giúp đặt vé"
+                          onPress={() => router.push("/help")}
+                        >
+                          <Icon name="6-6816-imgCircleHelp" size={21} />
+                        </Tap>
+                      ))}
+                  </View>
+                ),
         }}
       />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          paddingHorizontal: space.xl,
+          paddingHorizontal: design ? horizontalPadding : space.xl,
           paddingTop: step === undefined ? space.md : 0,
           paddingBottom: space.xl,
           gap: 14,
@@ -97,29 +105,27 @@ export function Screen({
       >
         {step !== undefined && (
           <Row style={{ gap: space.sm, paddingBottom: space.md }}>
-            {["Hành khách", "Hành lý", "Thanh toán"].map(
-              (name, i) => (
+            {["Hành khách", "Hành lý", "Thanh toán"].map((name, i) => (
+              <View
+                key={name}
+                style={{ flex: 1, gap: 7, paddingBottom: space.sm }}
+              >
                 <View
-                  key={name}
-                  style={{ flex: 1, gap: 7, paddingBottom: space.sm }}
+                  style={{
+                    height: 3,
+                    borderRadius: 2,
+                    backgroundColor: i <= step ? c.primary : c.line,
+                  }}
+                />
+                <Label
+                  size={10}
+                  color={i <= step ? c.primary : c.muted}
+                  weight={i === step ? "bold" : "regular"}
                 >
-                  <View
-                    style={{
-                      height: 3,
-                      borderRadius: 2,
-                      backgroundColor: i <= step ? c.primary : c.line,
-                    }}
-                  />
-                  <Label
-                    size={10}
-                    color={i <= step ? c.primary : c.muted}
-                    weight={i === step ? "bold" : "regular"}
-                  >
-                    {name}
-                  </Label>
-                </View>
-              ),
-            )}
+                  {name}
+                </Label>
+              </View>
+            ))}
           </Row>
         )}
         {children}
@@ -127,12 +133,12 @@ export function Screen({
       {footer && (
         <View
           style={{
-            paddingHorizontal: space.xl,
+            paddingHorizontal: design ? horizontalPadding : space.xl,
             paddingTop: 14,
             paddingBottom: Math.max(inset.bottom, 12),
             borderTopWidth: 1,
             borderTopColor: c.line,
-            backgroundColor: c.white,
+            backgroundColor: design ? "#EEEEEE" : c.white,
           }}
         >
           {footer}

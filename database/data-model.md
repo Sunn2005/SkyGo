@@ -52,7 +52,7 @@ Review phải tồn tại trước khi tạo đơn; ticket và invoice chỉ t�
 
 | Bảng | Cột nghiệp vụ | Ràng buộc và mục đích |
 |---|---|---|
-| `app_user` | `public_id VARCHAR(64)`, `full_name VARCHAR(200)`, `phone_normalized VARCHAR(16)`, `email VARCHAR(254)?`, `password_hash VARCHAR(255)` | UQ `public_id`, UQ `phone_normalized`. Không lưu mật khẩu gốc hoặc xác nhận mật khẩu. Email tùy chọn, không yêu cầu duy nhất. |
+| `app_user` | `public_id VARCHAR(64)`, `full_name VARCHAR(200)`, `phone_normalized VARCHAR(16)`, `email VARCHAR(254)?`, `password_hash VARCHAR(255)` | UQ `public_id`, UQ `phone_normalized`. Không lưu mật khẩu gốc hoặc xác nhận mật khẩu. API đăng ký yêu cầu họ tên và email hợp lệ; email không cần duy nhất. Cột email của migration V1 vẫn cho phép NULL để tương thích dữ liệu đã tạo trước thay đổi này. |
 | `auth_session` | `public_id VARCHAR(64)`, `user_id`, `token_hash BINARY(32)`, `expires_at_utc`, `revoked_at_utc?` | FK user; UQ public ID và token hash. Chỉ lưu hash của token; đăng xuất thu hồi phiên hiện tại và vô hiệu review chưa dùng của phiên. |
 | `login_guard` | `phone_normalized VARCHAR(16)`, `failure_count INT UNSIGNED`, `failure_at_1_utc DATETIME(6)?`, `failure_at_2_utc DATETIME(6)?`, `failure_at_3_utc DATETIME(6)?`, `failure_at_4_utc DATETIME(6)?`, `failure_at_5_utc DATETIME(6)?`, `locked_until_utc DATETIME(6)?` | UQ phone; không FK tới user để theo dõi cả số chưa đăng ký. Năm cột thời gian lưu tối đa 5 lần sai gần nhất trong cửa sổ 15 phút kể từ lần đăng nhập thành công hoặc hết khóa. Nếu có 5 lần sai liên tiếp trong cùng cửa sổ 15 phút, khóa 15 phút kể từ lần sai thứ 5. Xem quy tắc cập nhật nguyên tử bên dưới. |
 

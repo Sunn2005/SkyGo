@@ -31,7 +31,8 @@ public class SecurityConfig {
                 a.requestMatchers(
                         org.springframework.http.HttpMethod.POST,
                         "/api/v1/auth/register",
-                        "/api/v1/auth/login")
+                        "/api/v1/auth/login",
+                        "/api/v1/flights/search")
                     .permitAll()
                     .requestMatchers(
                         org.springframework.http.HttpMethod.GET, "/api/v1/home",

@@ -110,6 +110,7 @@ Khi thay schema tiếp, thêm migration mới (V7...); giữ nguyên migration �
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
 | POST /api/v1/bookings | Tạo đơn và payment PENDING từ review mới nhất; cần Idempotency-Key |
 | POST /api/v1/bookings/{bookingId}/open-for-payment | Mở chi tiết đơn; dùng lại hold còn hạn hoặc kiểm tra và giữ lại chỗ trước khi trả dữ liệu |
+| POST /api/v1/bookings/{bookingId}/payment-link | Tạo hoặc lấy lại link/QR PayOS cho lượt giữ chỗ hiện hành |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 | POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
 | POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ, tạo review version 1 và trả đủ dữ liệu review; cần đăng nhập |
@@ -734,6 +735,32 @@ một phần hành trình. Đơn đã `PAID` hoặc `RECONCILIATION_REQUIRED` v�
 đọc chi tiết nhưng không tạo hold mới. Link PayOS cũ chưa thể xác minh được trả
 409 `PAYMENT_STATUS_UNVERIFIED`; phần đối soát với PayOS sẽ được nối khi tích
 hợp API tạo link/webhook. API không tạo QR.
+
+`POST /api/v1/bookings/{bookingId}/payment-link` cần Bearer token của chủ đơn,
+không có body, trả `Cache-Control: no-store`. Dùng sau khi tạo booking trong luồng
+đặt vé bình thường, hoặc sau `open-for-payment` trong luồng xem lại đơn. Đơn phải
+`PENDING_PAYMENT`, payment `PENDING`, có hold `ACTIVE` của chính đơn và chưa hết
+hạn. Backend lấy số tiền VND từ booking đã lưu, không nhận số tiền từ client.
+Lần đầu tạo một `payment_attempt` cho hold, gửi PayOS `orderCode` duy nhất,
+`amount`, `description` và `expiredAt` bằng hạn hold; đồng thời chuyển
+`payment.method` sang `PAYOS`. Gọi lại trên cùng hold trả cùng link/QR và không
+gia hạn thời gian. Response gồm bookingId/bookingCode, tóm tắt hành trình, số
+khách, giá vé/hành lý/VAT/tổng tiền, expiresAt và `paymentLink` với
+paymentLinkId/orderCode/status/amount/currency/description/qrCode/checkoutUrl.
+`qrCode` là chuỗi VietQR để app vẽ mã và lưu ảnh, không phải ảnh tĩnh.
+
+Backend đọc `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`,
+`PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` từ biến môi trường (hoặc Run Configuration
+trong IDE). File `.env` không tự được Spring Boot nạp. `PAYOS_BASE_URL` chỉ dùng
+để đổi địa chỉ API PayOS khi kiểm thử; mặc định là API PayOS production. Không
+đưa khóa vào Git hoặc ứng dụng mobile. Thiếu cấu hình trả 503
+`PAYOS_NOT_CONFIGURED` trước khi tạo attempt. PayOS từ chối rõ ràng thì attempt
+chuyển `FAILED` và có thể thử lại với cùng orderCode. Nếu phản hồi không rõ
+(timeout/5xx), attempt giữ `CREATING`, trả `PAYMENT_LINK_UNVERIFIED` và không
+tạo link khác cho hold đó cho đến khi được đối soát. API này không đánh dấu đã
+thanh toán, không tạo vé; cần webhook và API kiểm tra trạng thái trước khi thử
+giao dịch thật. `returnUrl`/`cancelUrl` phải là địa chỉ hoạt động cho luồng
+chuyển hướng PayOS; webhook chưa được hiện thực ở bước này.
 
 `data` gồm bookingId, bookingCode, bookingStatus, createdAt, tripType,
 passengerCounts, contact, seatHoldId/holdExpiresAt hiện hành (nullable), price

@@ -18,7 +18,11 @@ public class ReviewEncryptionService {
       @Value("${skygo.review.key-id:v1}") String keyId) {
     this.encodedKey=encodedKey; this.keyId=keyId;
   }
-  public record Context(String reviewId,long userId,long sessionId,long seatHoldId,int schemaVersion) {}
+  public record Context(String reviewId,long userId,long sessionId,long seatHoldId,int schemaVersion,long reviewVersion) {
+    public Context(String reviewId,long userId,long sessionId,long seatHoldId,int schemaVersion) {
+      this(reviewId,userId,sessionId,seatHoldId,schemaVersion,1);
+    }
+  }
   private SecretKeySpec key() {
     try {
       byte[] bytes=Base64.getDecoder().decode(encodedKey);
@@ -28,21 +32,24 @@ public class ReviewEncryptionService {
       throw new BookingException(503,"REVIEW_ENCRYPTION_UNAVAILABLE","Backend chưa được cấu hình khóa mã hóa review hợp lệ.");
     }
   }
-  private byte[] aad(Context c) {
-    return ("skygo-review|1|"+keyId+"|"+c.reviewId()+"|"+c.userId()+"|"+c.sessionId()+"|"+c.seatHoldId()+"|"+c.schemaVersion())
+  private byte[] aad(Context c,int envelopeVersion) {
+    return ("skygo-review|"+envelopeVersion+"|"+keyId+"|"+c.reviewId()+"|"+c.userId()+"|"+c.sessionId()+"|"+c.seatHoldId()+"|"+c.schemaVersion()
+        +(envelopeVersion==1?"":"|"+c.reviewVersion()))
         .getBytes(StandardCharsets.UTF_8);
   }
   public byte[] encrypt(byte[] plaintext,Context context) {
     var secret=key();
     try {
+      int version=context.schemaVersion()==1?1:2;
+      if(context.reviewVersion()<1 || version==1 && context.reviewVersion()!=1) throw new GeneralSecurityException();
       byte[] nonce=new byte[12]; random.nextBytes(nonce);
       var cipher=Cipher.getInstance("AES/GCM/NoPadding");
       cipher.init(Cipher.ENCRYPT_MODE,secret,new GCMParameterSpec(128,nonce));
-      cipher.updateAAD(aad(context));
+      cipher.updateAAD(aad(context,version));
       byte[] ciphertext=cipher.doFinal(plaintext);
       byte[] id=keyId.getBytes(StandardCharsets.UTF_8);
       return ByteBuffer.allocate(2+id.length+nonce.length+ciphertext.length)
-          .put((byte)1).put((byte)id.length).put(id).put(nonce).put(ciphertext).array();
+          .put((byte)version).put((byte)id.length).put(id).put(nonce).put(ciphertext).array();
     } catch(GeneralSecurityException ex) {
       throw new BookingException(503,"REVIEW_ENCRYPTION_UNAVAILABLE","Không thể mã hóa review.");
     }
@@ -52,7 +59,10 @@ public class ReviewEncryptionService {
     var secret=key();
     try {
       var data=ByteBuffer.wrap(envelope);
-      if(data.get()!=1) throw new GeneralSecurityException();
+      int version=Byte.toUnsignedInt(data.get());
+      if(version!=1 && version!=2 || context.reviewVersion()<1
+          || version==1 && (context.schemaVersion()!=1 || context.reviewVersion()!=1)
+          || version==2 && context.schemaVersion()<2) throw new GeneralSecurityException();
       int length=Byte.toUnsignedInt(data.get());
       if(length<1 || length>64 || data.remaining()<length+12+16) throw new GeneralSecurityException();
       byte[] id=new byte[length]; data.get(id);
@@ -61,7 +71,7 @@ public class ReviewEncryptionService {
       byte[] ciphertext=new byte[data.remaining()]; data.get(ciphertext);
       var cipher=Cipher.getInstance("AES/GCM/NoPadding");
       cipher.init(Cipher.DECRYPT_MODE,secret,new GCMParameterSpec(128,nonce));
-      cipher.updateAAD(aad(context));
+      cipher.updateAAD(aad(context,version));
       return cipher.doFinal(ciphertext);
     } catch(GeneralSecurityException|RuntimeException ex) {
       throw new BookingException(409,"REVIEW_INVALID","Dữ liệu review không hợp lệ hoặc không thể xác thực.");

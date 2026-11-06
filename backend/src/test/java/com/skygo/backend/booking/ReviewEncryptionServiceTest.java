@@ -34,4 +34,18 @@ class ReviewEncryptionServiceTest {
     var other=new ReviewEncryptionService(Base64.getEncoder().encodeToString(key),"test-v1");
     assertThrows(BookingException.class,()->other.decrypt(crypto.encrypt(new byte[0],context),context));
   }
+  @Test
+  void newEnvelopeAuthenticatesReviewRevisionAndStillReadsLegacyEnvelope() {
+    byte[] clear="{}".getBytes(StandardCharsets.UTF_8);
+    byte[] legacy=crypto.encrypt(clear,context);
+    assertEquals(1,legacy[0]);
+    assertArrayEquals(clear,crypto.decrypt(legacy,context));
+    assertThrows(BookingException.class,()->crypto.decrypt(legacy,new ReviewEncryptionService.Context("r1",1,2,3,1,2)));
+    var current=new ReviewEncryptionService.Context("r1",1,2,3,2,5);
+    byte[] envelope=crypto.encrypt(clear,current);
+    assertEquals(2,envelope[0]);
+    assertArrayEquals(clear,crypto.decrypt(envelope,current));
+    assertThrows(BookingException.class,()->crypto.decrypt(envelope,new ReviewEncryptionService.Context("r1",1,2,3,2,4)));
+    assertThrows(BookingException.class,()->crypto.decrypt(envelope,context));
+  }
 }

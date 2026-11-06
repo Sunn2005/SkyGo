@@ -37,10 +37,13 @@ class BookingReviewIntegrationTest extends PricingFixture {
     long hold=jdbc.queryForObject("SELECT id FROM seat_hold WHERE public_id=?",Long.class,h.seatHoldId());
     byte[] stored=jdbc.queryForObject("SELECT snapshot_ciphertext FROM booking_review WHERE public_id=?",byte[].class,id);
     assertFalse(new String(stored,StandardCharsets.UTF_8).contains("000012345678"));
-    byte[] clear=encryption.decrypt(stored,new ReviewEncryptionService.Context(id,user,s.id(),hold,1));
+    byte[] clear=encryption.decrypt(stored,new ReviewEncryptionService.Context(id,user,s.id(),hold,2,1));
     var snapshot=mapper.readValue(clear,BookingReviewSnapshot.class);
     assertEquals("000012345678",snapshot.passengers().getFirst().document().number());
     assertEquals(3,snapshot.passengerBenefits().size());
+    assertEquals(2,snapshot.schemaVersion());
+    assertEquals(1,snapshot.version());
+    assertEquals(0,snapshot.price().extraBaggageAmount());
     assertEquals(h.expiresAt(),snapshot.expiresAt());
     assertEquals(1122000,snapshot.quote().totalAmount());
     assertEquals(2,seats(outFare));

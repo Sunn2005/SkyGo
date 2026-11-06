@@ -35,8 +35,8 @@ của đơn/review cũ; policy/kích thước của snapshot lịch sử để N
 Sau V4 có 22 bảng nghiệp vụ và bảng lịch sử Flyway.
 
 Triển khai V4 cùng bản code đọc policy mới; không chạy lại V1–V3 hoặc sửa checksum.
-Khởi động backend sẽ áp dụng V4 qua Flyway. API lấy/lưu hành lý và snapshot schema 2
-sẽ được triển khai riêng; API review hiện tại vẫn dùng schema 1 và chưa nhận mua thêm.
+Khởi động backend áp dụng các migration còn thiếu qua Flyway. API review mới tạo
+snapshot schema 2; GET/PUT hành lý đã hỗ trợ lựa chọn mua thêm theo người/chiều.
 Chính sách đã được tham chiếu cần giữ nguyên nội dung; khi thay cấu hình tạo version mới,
 kiểm tra khoảng hiệu lực và gán policy tương ứng bằng backend/quy trình quản trị.
 
@@ -46,7 +46,25 @@ lịch sử rồi nâng lên V4 để kiểm tra dữ liệu và ràng buộc. T
 CREATE/DROP database tạm; test chỉ xóa đúng database tên UUID do nó tự tạo.
 Các integration test khác tiếp tục dùng `SKYGO_TEST_DB_URL` và fixture riêng.
 
-Khi thay schema tiếp, thêm migration mới (V5...); giữ nguyên migration đã áp dụng.
+Flyway V5 thêm `booking_review.review_version INT UNSIGNED NOT NULL DEFAULT 1`
+và CHECK `review_version >= 1`. Đây là version nội dung review, độc lập với
+`snapshot_schema_version` là version định dạng JSON mã hóa. Mọi review hiện có
+nhận giá trị 1, giữ nguyên ID, ciphertext, schema version, trạng thái, hạn và timestamp.
+Không thêm bảng hoặc trigger, không tăng version khi chỉ đọc dữ liệu.
+
+Sau V5, API PUT hành lý kiểm tra `expectedVersion`, cập nhật trên cùng review và
+tăng version khi dữ liệu/giá thực sự thay đổi. API POST tạo review ban đầu version 1;
+GET review và GET baggage-options trả version hiện tại. POST xác nhận lại hành khách
+vẫn tạo review mới và vô hiệu bản trước; đổi chuyến/số khách cũng vô hiệu review.
+Review đã dùng để tạo đơn sẽ không được sửa; booking giữ dữ liệu đã chốt.
+
+`BookingReviewVersionMigrationIntegrationTest` tạo database riêng
+`skygo_review_version_test_<uuid>`, nâng V4 lên V5 và kiểm tra giữ nguyên dữ liệu,
+giá trị mặc định, ràng buộc version, cập nhật có điều kiện và rollback. Tài khoản
+test cần quyền CREATE/DROP database tạm. Kiểm thử SQL này không thay thế kiểm thử
+API cập nhật sẽ bổ sung ở bước sau.
+
+Khi thay schema tiếp, thêm migration mới (V6...); giữ nguyên migration đã áp dụng.
 `clean` của Flyway được tắt. Fixture `database/home-demo-seed.sql` yêu cầu schema V4.
 
 | Endpoint | Kết quả |
@@ -65,7 +83,10 @@ Khi thay schema tiếp, thêm migration mới (V5...); giữ nguyên migration �
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 | POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
-| POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ và lưu review mã hóa gắn với phiên; cần đăng nhập |
+| POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ, tạo review version 1 và trả đủ dữ liệu review; cần đăng nhập |
+| GET /api/v1/booking-reviews/{reviewId} | Đọc toàn bộ review hiện tại của tài khoản/phiên |
+| GET /api/v1/booking-reviews/{reviewId}/baggage-options | Dữ liệu màn hành lý và version hiện tại |
+| PUT /api/v1/booking-reviews/{reviewId}/baggage | Thay thế lựa chọn hành lý trên cùng review, kiểm tra expectedVersion |
 
 ### API chọn điểm đi và điểm đến
 
@@ -418,13 +439,13 @@ Quy tắc dữ liệu:
   không sửa ciphertext cũ. Hạn review bằng hạn hold. Review gắn tài khoản và phiên
   hiện tại; đăng xuất vô hiệu review chưa dùng. Sửa hold cũng vô hiệu review chưa dùng.
 
-Review chưa tạo booking/payment. Snapshot schema version 1 chứa toàn bộ hành trình,
+Review chưa tạo booking/payment. Snapshot schema version 2 chứa toàn bộ hành trình,
 hãng/sân bay/lịch bay, hành khách, giấy tờ, liên hệ, quyền lợi từng khách/từng chiều,
-các dòng giá và VAT để bước tạo đơn đối chiếu/sao chép. Dữ liệu này được mã hóa
+các dòng giá, version, chính sách/lựa chọn hành lý và VAT chung để bước tạo đơn đối chiếu/sao chép. Dữ liệu này được mã hóa
 AES-256-GCM với nonce ngẫu nhiên, tag 128 bit; envelope có phiên bản và key ID.
-AAD gắn review/tài khoản/phiên/hold/schema để phát hiện tráo payload. Payload lưu tại
+AAD gắn review/tài khoản/phiên/hold/schema và review_version để phát hiện tráo payload. Payload lưu tại
 `booking_review.snapshot_ciphertext`; response không trả ciphertext hay khóa.
-Thay đổi snapshot khi chưa tạo đơn phải tạo review mới. UI cần hiển thị tổng tiền
+Lưu hành lý cập nhật snapshot trên cùng review và tăng version khi nội dung thay đổi. UI cần hiển thị tổng tiền
 review trả về trước khi tạo đơn vì backend tính lại giá tại lần xác nhận.
 
 ### Cấu hình khóa mã hóa review
@@ -459,7 +480,7 @@ Lỗi bổ sung của hai API: 401 UNAUTHENTICATED, 404 SEAT_HOLD_NOT_FOUND,
 422 VALIDATION_ERROR / PASSENGER_AGE_MISMATCH. Chi tiết lỗi không chứa dữ liệu đã nhập.
 Kiểm thử integration dùng khóa riêng cố định chỉ trong test, không dùng khóa này để
 chạy ứng dụng. Các bài test bao phủ giá, policy thiếu, quyền sở hữu, hold hết hạn,
-ghế cuối đã giữ, validate hành khách, logout, ciphertext bất biến và phát hiện sửa/tráo payload.
+ghế cuối đã giữ, validate hành khách, logout, đọc dữ liệu không sửa ciphertext và phát hiện sửa/tráo payload.
 
 ## Màn thêm hành lý
 
@@ -472,12 +493,13 @@ Authorization: Bearer <token>
 
 Dùng `reviewId` vừa nhận từ `POST /api/v1/booking-reviews` và token của **cùng phiên
 đăng nhập đã tạo review**. Không có request body. Trả **200 OK**, `Cache-Control: no-store`.
-Response không lặp lại `reviewId`, nhưng giữ `passengerCounts` để hiển thị tóm tắt.
+Response không lặp lại `reviewId`, trả `version` và giữ `passengerCounts` để hiển thị tóm tắt.
 Ví dụ một người lớn, một chiều; mã sân bay/ngày/hạn dưới đây chỉ minh họa:
 
 ```json
 {
   "data": {
+    "version": 1,
     "expiresAt": "2026-11-18T00:15:00Z",
     "currency": "VND",
     "passengerCounts": {"adults": 1, "children": 0, "infants": 0},
@@ -529,10 +551,11 @@ Ví dụ một người lớn, một chiều; mã sân bay/ngày/hạn dưới �
   INFANT có `canPurchaseExtra=false`, không hiển thị bộ chọn mua riêng.
 - Mọi trường có hậu tố `ExclVat` là **chưa VAT**. Frontend tính tạm thành tiền bằng
   số kiện × đơn giá, cộng các người/chiều. VAT 10% tính chung với tiền vé khi lưu
-  lựa chọn và tạo review mới ở bước tiếp theo. UI ghi rõ "Chưa gồm VAT".
-- Review hiện tại dùng snapshot schema 1 chỉ có miễn cước, nên số kiện/thành tiền mua
-  thêm và tổng hành lý ban đầu bằng 0. API lưu hành lý và snapshot schema 2 sẽ triển
-  khai riêng; chưa thể lưu hoặc mở lại lựa chọn mua thêm qua API hiện tại.
+  lựa chọn và cập nhật review bằng PUT. UI ghi rõ "Chưa gồm VAT".
+- Review mới bắt đầu với số kiện/thành tiền mua thêm bằng 0. Sau PUT, mở lại màn
+  hành lý trả đúng số kiện, thành tiền và version đã lưu. Chính sách thay đổi so với
+  snapshot trả REVIEW_OUTDATED khi đọc options; PUT tính lại theo cấu hình hợp lệ
+  hiện tại và trả review mới nhất để người dùng xem trước khi tiếp tục.
 - Chỉ cho đọc review còn hiệu lực của đúng tài khoản/phiên, chưa dùng và hold còn
   ACTIVE chưa gắn đơn. GET không tạo/vô hiệu review mới, không giữ thêm ghế, không
   gia hạn. Khi hold thực sự hết hạn, cơ chế expiry chung vẫn trả ghế đúng một lần.
@@ -554,3 +577,95 @@ Lỗi dùng envelope booking hiện có, không trả kèm dữ liệu hành kh�
 khứ hồi khác hạng, ngày bay địa phương, dữ liệu snapshot bất biến, quyền/phiên,
 review không còn dùng được, policy lỗi và expiry trong lúc đọc policy. Không cần
 migration mới ngoài V4 cho API GET này.
+
+## Lưu hành lý và tải lại review
+
+```http
+PUT /api/v1/booking-reviews/{reviewId}/baggage
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "expectedVersion": 1,
+  "selections": [
+    {"clientPassengerId": "p1", "direction": "OUTBOUND", "extraPieces": 2}
+  ]
+}
+```
+
+Gửi đúng một lựa chọn cho **mỗi ADULT/CHILD trên mỗi chiều**, kể cả số kiện 0;
+không gửi lựa chọn cho INFANT. Khứ hồi phải gửi cả OUTBOUND và RETURN. Các số
+phải là số nguyên JSON; expectedVersion từ 1 đến 4294967295, extraPieces từ 0–2.
+Thiếu/trùng/sai người hoặc chiều, mua cho em bé hoặc vượt giới hạn trả 422 VALIDATION_ERROR.
+Client không gửi giá, VAT hoặc tổng thanh toán để backend sử dụng.
+
+Backend kiểm tra quyền/phiên/hạn/chưa dùng và version, đối chiếu giữ chỗ,
+tính lại vé/quyền lợi theo catalog, kiểm tra lại hành khách/giấy tờ rồi tính hành lý
+theo policy hiện hành. Mỗi đơn có tiền vé chưa VAT và tiền hành lý chưa VAT:
+
+```text
+extraBaggageAmount = tổng(extraPieces × extraPiecePriceExclVat) của mọi người/chiều
+vatAmount = round_half_up((fareSubtotal + extraBaggageAmount) × vatRate)
+totalAmount = fareSubtotal + extraBaggageAmount + vatAmount
+```
+
+Không dùng giá đã gồm VAT trên màn tìm chuyến làm fareSubtotal. Với vé chưa VAT
+561000 và 2 kiện × 325000, VAT là 121100 và tổng 1332100 VND. Giá và hạn trên ảnh
+mock không thay thế policy backend: Phổ thông xách tay 7 kg, Thương gia 15 kg;
+kiện ký gửi chung 23 kg/158 cm và miễn cước tương ứng 1/2 kiện cho khách có ghế.
+
+Thành công **200 OK**, giữ reviewId, createdAt và expiresAt. Nếu nội dung/giá
+thực sự thay đổi, cập nhật ciphertext, snapshot_schema_version=2, review_version+1
+và updated_at_utc trong cùng transaction. Lưu lại dữ liệu không đổi với version
+hiện tại giữ nguyên cả version lẫn ciphertext. Không cộng dồn qua các lần lưu,
+không tạo bản ghi review mới, không giữ thêm ghế, không gia hạn hoặc tạo booking/payment.
+Nếu giữ chỗ hết hạn khi đang xử lý, chỉ commit việc hết hạn/trả ghế; không lưu hành lý.
+Lỗi mã hóa/ghi dữ liệu rollback cả payload và version.
+
+POST tạo review, GET review và PUT lưu hành lý dùng chung cấu trúc data:
+
+- reviewId, version, expiresAt, currency, totalAmount, tripType và passengerCounts.
+- passengers: toàn bộ hành khách, giấy tờ đã che; contact: email/điện thoại đã chuẩn hóa.
+- legs: chiều, chuyến/hãng/hạng vé, sân bay (code/name/city/countryCode), giờ đi/đến
+  có offset theo sân bay, durationMinutes, checkedBaggagePolicy và passengerBaggage.
+- passengerBaggage có clientPassengerId, included (xách tay/kiện miễn cước/xe đẩy),
+  canPurchaseExtra, selectedExtraPieces và extraAmountExclVat. Unit price và giới hạn
+  kiện dùng chung trong checkedBaggagePolicy; frontend nối tên bằng clientPassengerId.
+- price có fareSubtotal, extraBaggageAmount, vatRate, vatAmount và totalAmount.
+  Root totalAmount bằng price.totalAmount để giữ tương thích client hiện có.
+
+Frontend nên hiển thị ba dòng: **Vé chưa VAT**, **Hành lý mua thêm chưa VAT**,
+**VAT**, rồi tổng thanh toán; không cộng hành lý chưa VAT vào dòng vé đã gồm VAT.
+Mở màn hành lý giữ lựa chọn tạm cục bộ, quay lại chưa lưu thì bỏ thay đổi.
+Sau PUT thành công, thay review bằng data trả về và quay về màn Kiểm tra & thanh toán.
+
+```http
+GET /api/v1/booking-reviews/{reviewId}
+Authorization: Bearer <token>
+```
+
+GET không tính lại giá hoặc sửa version/ciphertext. Với version cũ, PUT trả
+409 REVIEW_VERSION_CONFLICT, không kèm dữ liệu hành khách; frontend gọi GET trên
+để tải lại và cho người dùng xác nhận, không tự lấy version mới để gửi đè.
+Nếu mất phản hồi sau khi PUT đã commit, gửi lại expectedVersion cũ cũng nhận 409;
+đọc lại review sẽ thấy kết quả đã lưu. Hai cập nhật cùng expectedVersion chỉ một
+yêu cầu được ghi; kiểm tra bằng WHERE review_version cùng quyền/phiên/trạng thái/hạn.
+
+Các lỗi quyền/phiên/hạn/đã dùng/cấu hình/khóa mã hóa giống GET baggage-options.
+GET/PUT đều trả Cache-Control: no-store. API tạo đơn (triển khai sau) phải nhận
+expectedVersion, kiểm tra và sao chép snapshot trong cùng transaction rồi đánh dấu
+review đã dùng; không cho sửa review sau khi tạo đơn.
+
+Schema JSON 2 chứa version, snapshot policy và lựa chọn/giá theo người/chiều.
+Envelope AES-GCM 2 gắn review_version vào AAD, không thay key/key ID. Đọc được
+review schema/envelope 1 ở review_version=1 mà không ghi lại hoặc gia hạn; số kiện
+mua thêm cũ là 0. Chỉ nâng thành schema/envelope 2 khi thực sự thay đổi dữ liệu.
+Tráo payload khác review/session/hold/schema/version bị từ chối REVIEW_INVALID.
+Giữ nguyên khóa mã hóa hiện có khi restart; việc nâng schema không phải xoay khóa.
+
+BookingBaggageSaveIntegrationTest bao phủ lưu/xóa/không đổi, nhiều người/chiều,
+đọc lại, xung đột đồng thời, quyền/phiên, kiểm tra input, expiry, rollback sau SQL,
+khả năng đọc/nâng review cũ và chống replay payload. BookingBaggagePricingServiceTest
+kiểm tra VAT chung, làm tròn và tràn số. Không cần migration sau V5 cho API này.

@@ -36,6 +36,7 @@ class BookingBaggageIntegrationTest extends PricingFixture {
     String response=mvc.perform(get(path(review.reviewId())).with(asSession(session)))
         .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
         .andExpect(jsonPath("$.data.reviewId").doesNotExist())
+        .andExpect(jsonPath("$.data.version").value(1))
         .andExpect(jsonPath("$.data.expiresAt").value(h.expiresAt().toString()))
         .andExpect(jsonPath("$.data.currency").value("VND"))
         .andExpect(jsonPath("$.data.passengerCounts.adults").value(1))
@@ -151,7 +152,7 @@ class BookingBaggageIntegrationTest extends PricingFixture {
     var review=review(session,h);
     jdbc.update("UPDATE booking_review SET used_at_utc=? WHERE public_id=?",utc(now),review.reviewId());
     expectError(session,review.reviewId(),409,"REVIEW_ALREADY_USED");
-    jdbc.update("UPDATE booking_review SET used_at_utc=NULL,snapshot_schema_version=2 WHERE public_id=?",review.reviewId());
+    jdbc.update("UPDATE booking_review SET used_at_utc=NULL,snapshot_schema_version=3 WHERE public_id=?",review.reviewId());
     expectError(session,review.reviewId(),409,"REVIEW_INVALID");
     jdbc.update("UPDATE booking_review SET snapshot_schema_version=1,expires_at_utc=? WHERE public_id=?",utc(now),review.reviewId());
     expectError(session,review.reviewId(),409,"REVIEW_EXPIRED");

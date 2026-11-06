@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-public record BaggageOptionsResponse(Instant expiresAt, String currency,
+public record BaggageOptionsResponse(long version, Instant expiresAt, String currency,
     PassengerCountsRequest passengerCounts, List<Passenger> passengers, List<Leg> legs,
     long totalBaggageAmountExclVat) {
   public record Passenger(String clientPassengerId, String fullName, PassengerType passengerType) {}

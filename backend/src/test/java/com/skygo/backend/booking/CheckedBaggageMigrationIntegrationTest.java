@@ -33,7 +33,7 @@ class CheckedBaggageMigrationIntegrationTest {
           (rs,n)->List.of(rs.getLong("id"),rs.getInt("checked_pieces"),rs.getInt("checked_piece_max_kg")));
       var amounts=jdbc.queryForMap("SELECT fare_subtotal,vat_rate,vat_amount,total_amount FROM booking WHERE id=999999");
       byte[] review=jdbc.queryForObject("SELECT snapshot_ciphertext FROM booking_review WHERE id=999999",byte[].class);
-      var flyway=Flyway.configure().dataSource(source).cleanDisabled(true).load();
+      var flyway=Flyway.configure().dataSource(source).target("4").cleanDisabled(true).load();
       assertEquals(1,flyway.migrate().migrationsExecuted);
       flyway.validate();
       assertEquals(0,flyway.migrate().migrationsExecuted);
@@ -82,7 +82,7 @@ class CheckedBaggageMigrationIntegrationTest {
     }
   }
 
-  private void seedHistory(JdbcTemplate jdbc) {
+  static void seedHistory(JdbcTemplate jdbc) {
     jdbc.execute("INSERT INTO app_user(id,public_id,full_name,phone_normalized,password_hash) VALUES(999999,'migration-user','Test','+84999999999','test')");
     jdbc.execute("""
         INSERT INTO auth_session(id,public_id,user_id,token_hash,expires_at_utc)

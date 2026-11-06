@@ -14,21 +14,30 @@ import java.time.*;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import com.skygo.backend.booking.service.SeatHoldExpiryService;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
-@Transactional(readOnly = true)
 public class FlightSearchService {
   private final FlightSearchRepository repository;
   private final Clock clock;
   private final Airline airline;
+  private final SeatHoldExpiryService expiry;
+  private final TransactionTemplate readTransaction;
 
   public FlightSearchService(FlightSearchRepository repository, Clock clock,
       @Value("${skygo.airline.code}") String airlineCode,
-      @Value("${skygo.airline.name}") String airlineName) {
+      @Value("${skygo.airline.name}") String airlineName,
+      SeatHoldExpiryService expiry, PlatformTransactionManager manager) {
     this.repository = repository;
     this.clock = clock;
     this.airline = new Airline(airlineCode, airlineName);
+    this.expiry = expiry;
+    readTransaction = new TransactionTemplate(manager);
+    readTransaction.setReadOnly(true);
+    readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
   }
 
   public FlightSearchResponse search(FlightSearchRequest request) {
@@ -57,9 +66,10 @@ public class FlightSearchService {
     var toZone = ZoneId.of(to.timeZone());
     int page = request.page() == null ? 0 : request.page();
     int size = request.size() == null ? 20 : request.size();
-    var rows = repository.search(new Criteria(from.id(), to.id(),
+    expiry.expireDue();
+    var rows = readTransaction.execute(status -> repository.search(new Criteria(from.id(), to.id(),
         date.atStartOfDay(fromZone).toInstant(), date.plusDays(1).atStartOfDay(fromZone).toInstant(),
-        now, (long) request.passengerCounts().adults() + request.passengerCounts().children(), page, size));
+        clock.instant(), (long) request.passengerCounts().adults() + request.passengerCounts().children(), page, size)));
     var grouped = new LinkedHashMap<String, List<FareRow>>();
     for (var row : rows.fares()) grouped.computeIfAbsent(row.flightId(), key -> new ArrayList<>()).add(row);
     var flights = new ArrayList<Flight>();

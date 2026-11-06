@@ -17,15 +17,21 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import com.skygo.backend.booking.service.SeatHoldExpiryService;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class FlightSearchServiceTest {
   final FlightSearchRepository repository = mock(FlightSearchRepository.class);
   final Instant now = Instant.parse("2027-03-14T01:00:00Z");
+  final SeatHoldExpiryService expiry = mock(SeatHoldExpiryService.class);
+  final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
   final FlightSearchService service = new FlightSearchService(
-      repository, Clock.fixed(now, ZoneOffset.UTC), "SG", "SkyGo");
+      repository, Clock.fixed(now, ZoneOffset.UTC), "SG", "SkyGo", expiry, manager);
 
   @BeforeEach
   void setup() {
+    when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
     when(repository.activeAirport("AAA")).thenReturn(Optional.of(
         new AirportRow(1, "AAA", "New York", "America/New_York")));
     when(repository.activeAirport("BBB")).thenReturn(Optional.of(
@@ -38,6 +44,9 @@ class FlightSearchServiceTest {
     service.search(request(TripType.ONE_WAY, Direction.OUTBOUND, "2027-03-14", null));
     var criteria = ArgumentCaptor.forClass(Criteria.class);
     verify(repository).search(criteria.capture());
+    var order = inOrder(expiry, repository);
+    order.verify(expiry).expireDue();
+    order.verify(repository).search(any());
     assertEquals(Instant.parse("2027-03-14T05:00:00Z"), criteria.getValue().dayStart());
     assertEquals(Instant.parse("2027-03-15T04:00:00Z"), criteria.getValue().dayEnd());
     assertEquals(3, criteria.getValue().requiredSeats()); // 2 adults + 1 child, not 4 infants.

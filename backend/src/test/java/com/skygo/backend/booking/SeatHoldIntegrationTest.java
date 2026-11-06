@@ -187,6 +187,11 @@ abstract class BookingFixture {
   void cleanup() {
     for(long owner:users) {
       jdbc.update("UPDATE seat_hold SET booking_id=NULL WHERE user_id=?",owner);
+      jdbc.update("DELETE t FROM ticket t JOIN booking b ON b.id=t.booking_id WHERE b.user_id=?",owner);
+      jdbc.update("DELETE i FROM invoice i JOIN booking b ON b.id=i.booking_id WHERE b.user_id=?",owner);
+      jdbc.update("DELETE x FROM booking_passenger_benefit x JOIN booking b ON b.id=x.booking_id WHERE b.user_id=?",owner);
+      jdbc.update("DELETE x FROM booking_fare_line x JOIN booking b ON b.id=x.booking_id WHERE b.user_id=?",owner);
+      jdbc.update("DELETE x FROM booking_passenger x JOIN booking b ON b.id=x.booking_id WHERE b.user_id=?",owner);
       jdbc.update("DELETE p FROM payment p JOIN booking b ON b.id=p.booking_id WHERE b.user_id=?",owner);
       jdbc.update("DELETE l FROM booking_leg l JOIN booking b ON b.id=l.booking_id WHERE b.user_id=?",owner);
       jdbc.update("DELETE FROM booking WHERE user_id=?",owner);

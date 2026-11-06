@@ -81,6 +81,7 @@ Khi thay schema tiếp, thêm migration mới (V6...); giữ nguyên migration �
 | GET /api/v1/seat-holds/current | Lượt giữ chỗ còn hiệu lực của tài khoản, hoặc data: null |
 | PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
+| POST /api/v1/bookings | Tạo đơn và payment PENDING từ review mới nhất; cần Idempotency-Key |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 | POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
 | POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ, tạo review version 1 và trả đủ dữ liệu review; cần đăng nhập |
@@ -318,8 +319,7 @@ giữ lại nguyên tử, tạo hold mới 15 phút liên kết cùng đơn. Gi�
 review, hành khách, hành trình, snapshot giá và payment hiện có. Nếu cùng đơn đã có
 hold còn hạn thì trả hold đó, không gia hạn. Nếu thiếu chỗ ở bất kỳ chiều nào,
 không trừ ghế ở chiều nào và giữ đơn EXPIRED; UI thông báo để khách chọn chuyến khác.
-API này hoạt động với đơn đã lưu; kiểm thử dùng đơn fixture vì API tạo đơn thật
-thuộc bước triển khai kế tiếp.
+API này hoạt động với đơn đã lưu, bao gồm đơn tạo qua `POST /api/v1/bookings`.
 
 Các mã lỗi:
 
@@ -654,9 +654,9 @@ Nếu mất phản hồi sau khi PUT đã commit, gửi lại expectedVersion c�
 yêu cầu được ghi; kiểm tra bằng WHERE review_version cùng quyền/phiên/trạng thái/hạn.
 
 Các lỗi quyền/phiên/hạn/đã dùng/cấu hình/khóa mã hóa giống GET baggage-options.
-GET/PUT đều trả Cache-Control: no-store. API tạo đơn (triển khai sau) phải nhận
-expectedVersion, kiểm tra và sao chép snapshot trong cùng transaction rồi đánh dấu
-review đã dùng; không cho sửa review sau khi tạo đơn.
+GET/PUT đều trả Cache-Control: no-store. API tạo đơn nhận expectedVersion,
+kiểm tra và sao chép snapshot trong cùng transaction rồi đánh dấu review đã dùng;
+không cho sửa review sau khi tạo đơn.
 
 Schema JSON 2 chứa version, snapshot policy và lựa chọn/giá theo người/chiều.
 Envelope AES-GCM 2 gắn review_version vào AAD, không thay key/key ID. Đọc được
@@ -669,3 +669,51 @@ BookingBaggageSaveIntegrationTest bao phủ lưu/xóa/không đổi, nhiều ng�
 đọc lại, xung đột đồng thời, quyền/phiên, kiểm tra input, expiry, rollback sau SQL,
 khả năng đọc/nâng review cũ và chống replay payload. BookingBaggagePricingServiceTest
 kiểm tra VAT chung, làm tròn và tràn số. Không cần migration sau V5 cho API này.
+
+## Tạo booking từ review
+
+`POST /api/v1/bookings` cần Bearer token của đúng phiên tạo review và header
+`Idempotency-Key` gồm 1–128 ký tự ASCII không có khoảng trắng. Body:
+
+```json
+{"reviewId":"review-public-id","expectedVersion":2}
+```
+
+`expectedVersion` lấy từ POST/GET review hoặc PUT hành lý gần nhất. Không gửi lại
+giá, hành khách hay lựa chọn hành lý. Backend kiểm tra khóa chống gửi lặp trước:
+cùng tài khoản, khóa và body trả cùng đơn với HTTP 200, kể cả khi review đã dùng;
+cùng khóa nhưng body khác trả 409 `IDEMPOTENCY_KEY_REUSED`. Review đã dùng với
+khóa mới trả 409 `REVIEW_ALREADY_USED`.
+
+Yêu cầu mới kiểm tra review đúng tài khoản/phiên, version, hạn và hold ACTIVE đủ
+các chiều. Backend tính lại chuyến, quyền lợi, hành lý và VAT rồi so sánh với
+snapshot review. Thay đổi trả 409 `REVIEW_OUTDATED`; version cũ trả 409
+`REVIEW_VERSION_CONFLICT`. Trong một transaction, backend sao chép snapshot vào
+`booking`, `booking_leg`, `booking_passenger`, `booking_fare_line` và
+`booking_passenger_benefit`, tạo một `payment` QR_SIMULATION/PENDING, gắn hold với
+booking và đặt `booking_review.used_at_utc`. Không trừ ghế hoặc gia hạn hold.
+Lần đầu thành công trả 201, `Cache-Control: no-store`, gồm bookingId/bookingCode,
+trạng thái PENDING_PAYMENT, hạn hold, tổng tiền, passengerId và payment PENDING.
+Chưa tạo ticket hoặc invoice ở bước này.
+
+Số giấy tờ trong booking được mã hóa AES-256-GCM bằng khóa riêng, gắn với
+bookingId và passengerId. Đặt `SKYGO_BOOKING_DOCUMENT_ENCRYPTION_KEY` là Base64 của
+32 byte ngẫu nhiên và tùy chọn `SKYGO_BOOKING_DOCUMENT_KEY_ID` (mặc định `v1`).
+Khóa này phải được giữ lâu dài để đọc các booking đã lưu; không dùng khóa review
+ngắn hạn thay thế. Thiếu hoặc sai khóa trả 503 `DOCUMENT_ENCRYPTION_UNAVAILABLE`
+và transaction tạo đơn rollback. Không ghi khóa thật vào repository. Ví dụ tạo
+khóa local trong PowerShell mà không in ra terminal:
+
+```powershell
+$documentKeyBytes = [byte[]]::new(32)
+$documentRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$documentRng.GetBytes($documentKeyBytes)
+$documentRng.Dispose()
+$env:SKYGO_BOOKING_DOCUMENT_ENCRYPTION_KEY = [Convert]::ToBase64String($documentKeyBytes)
+$env:SKYGO_BOOKING_DOCUMENT_KEY_ID = 'local-v1'
+```
+
+Không đổi khóa khi còn booking cần đọc; cần key ring trước khi xoay khóa. Các
+integration test tạo booking dùng MariaDB test qua `SKYGO_TEST_DB_URL`, không dùng
+database chứa dữ liệu cần giữ. Bảng và cột đã có từ Flyway V1–V5; API này không
+cần migration mới.

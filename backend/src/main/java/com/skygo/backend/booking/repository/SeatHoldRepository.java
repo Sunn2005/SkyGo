@@ -68,6 +68,12 @@ public class SeatHoldRepository {
         WHERE seat_hold_id=? AND used_at_utc IS NULL AND invalidated_at_utc IS NULL
         """, utc(now), utc(now), hold);
   }
+  public boolean attachBooking(long hold,long user,long booking,Instant now) {
+    return jdbc.update("""
+        UPDATE seat_hold SET booking_id=?,updated_at_utc=?
+        WHERE id=? AND user_id=? AND booking_id IS NULL AND status='ACTIVE' AND expires_at_utc>?
+        """,booking,utc(now),hold,user,utc(now))==1;
+  }
   public boolean expire(long hold, Instant now) {
     return jdbc.update("""
         UPDATE seat_hold SET status='EXPIRED',released_at_utc=?,updated_at_utc=?

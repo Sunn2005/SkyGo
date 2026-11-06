@@ -73,7 +73,9 @@ class BookingQuoteIntegrationTest extends PricingFixture {
 
 @TestPropertySource(properties={
     "skygo.review.encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    "skygo.review.key-id=test-v1"})
+    "skygo.review.key-id=test-v1",
+    "skygo.booking.document-encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "skygo.booking.document-key-id=test-v1"})
 abstract class PricingFixture extends BookingFixture {
   @Autowired ObjectMapper mapper;
   @BeforeEach

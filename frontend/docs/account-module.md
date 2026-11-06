@@ -1,3 +1,5 @@
+> Cập nhật: ứng dụng đã dùng API thật cho tài khoản. Các phần mô tả mock bên dưới là tài liệu cũ/adapter test. Xem [kết nối frontend–backend](frontend-backend.md) để chạy và hiểu triển khai hiện tại.
+
 # Module tài khoản — frontend mẫu
 
 ## Phạm vi

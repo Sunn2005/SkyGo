@@ -157,8 +157,33 @@ export const airports = [
   },
 ] as const;
 
-export const airport = (code: AirportCode) =>
-  airports.find((a) => a.code === code)!;
+type AirportInfo = {
+  code: string;
+  name: string;
+  city: string;
+  country: string;
+  terminal: string;
+};
+const apiAirports = new Map<string, AirportInfo>();
+export function rememberAirports(
+  items: { code: string; name: string; city: string; countryName: string }[],
+) {
+  for (const item of items)
+    apiAirports.set(item.code, {
+      ...item,
+      country: item.countryName,
+      terminal: "Thông tin nhà ga sẽ cập nhật",
+    });
+}
+export const airport = (code: AirportCode): AirportInfo =>
+  apiAirports.get(code) ??
+  airports.find((a) => a.code === code) ?? {
+    code,
+    name: code,
+    city: code,
+    country: "",
+    terminal: "Thông tin nhà ga sẽ cập nhật",
+  };
 
 export const normalizeAirportQuery = (value: string) =>
   value

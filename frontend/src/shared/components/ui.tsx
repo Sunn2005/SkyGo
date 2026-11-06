@@ -133,7 +133,7 @@ export function Button({
         borderCurve: "continuous",
         justifyContent: "center",
         alignItems: "center",
-        backgroundColor: secondary ? c.tint : c.primary,
+        backgroundColor: c.primary,
         opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
       })}
     >
@@ -143,7 +143,7 @@ export function Button({
         <Label
           size={16}
           weight="semibold"
-          color={secondary ? c.primary : c.white}
+          color={c.white}
           style={{ textAlign: "center" }}
         >
           {title}

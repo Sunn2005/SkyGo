@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppState } from "react-native";
-import { accountService } from "../data/mock-account-service";
+import { accountService } from "../data/api-account-service";
 import {
   AccountError,
   type AccountSession,
@@ -47,7 +47,17 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const login = async (input: LoginInput) =>
     setSession(await accountService.login(input));
   const logout = async () => {
-    if (session) await accountService.logout(session.accessToken);
+    if (session) {
+      try {
+        await accountService.logout(session.accessToken);
+      } catch (error) {
+        // A revoked/expired session is already logged out on the server.
+        if (!(
+          error instanceof AccountError && error.code === "UNAUTHENTICATED"
+        ))
+          throw error;
+      }
+    }
     setSession(null);
   };
   const refreshUser = async () => {
@@ -61,7 +71,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       );
     } catch (error) {
       if (error instanceof AccountError && error.code === "UNAUTHENTICATED")
-        setSession(null);
+        setSession((current) =>
+          current?.accessToken === session.accessToken ? null : current,
+        );
       throw error;
     }
   };

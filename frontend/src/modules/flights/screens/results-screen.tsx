@@ -1,307 +1,245 @@
-import { flightPrice } from "@/modules/booking/services/booking-rules";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import { useAccount } from "@/modules/account/context/account-context";
+import { useCallback, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
-import { flights } from "@/modules/flights/data/flights";
 import { money } from "@/shared/utils/format";
-import {
-  Badge,
-  Button,
-  Card,
-  Divider,
-  Icon,
-  Label,
-  Notice,
-  Row,
-  Tap,
-} from "@/shared/components/ui";
-import { FlightTimes } from "@/modules/flights/components/flight-times";
+import { Button, Card, Label, Notice, Row, Tap } from "@/shared/components/ui";
+import { FlightTimes } from "../components/flight-times";
 import { Screen } from "@/shared/components/screen";
 import { TripSummary } from "@/modules/booking/components/trip-summary";
-import { colors as c, radius, space } from "@/shared/theme";
+import { searchFlights } from "../services/flight-service";
+import type { Flight } from "../types";
 
 export default function ResultsScreen() {
   const b = useBooking();
-  const { session } = useAccount();
-  const { resumeSelection } = useLocalSearchParams<{
-    resumeSelection?: string;
-  }>();
-  const [askLogin, setAskLogin] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { search } = b;
+  const [direction, setDirection] = useState<"OUTBOUND" | "RETURN">("OUTBOUND");
+  const [items, setItems] = useState<Flight[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const selecting = useRef(false);
-  const resumed = useRef(false);
-  const leg = b.legs[b.legIndex] ?? b.legs[0];
-  const results = flights
-    .filter(
-      (f) =>
-        (b.airline === "all" || f.airline === b.airline) &&
-        (!b.nonstop || f.stops === 0) &&
-        b.priceFor(f) <= b.maxPrice &&
-        (!b.morning || Number(f.departure.slice(0, 2)) < 12),
-    )
-    .sort((a, z) =>
-      b.sort === "cheapest"
-        ? b.priceFor(a) - b.priceFor(z)
-        : a.stops - z.stops || b.priceFor(a) - b.priceFor(z),
-    );
-  const choose = useCallback(
-    async (flight: (typeof flights)[number]) => {
-      if (selecting.current) return;
-      b.setCandidate(flight);
-      if (!session) {
-        setAskLogin(true);
-        return;
-      }
-      selecting.current = true;
-      setBusy(true);
+  const [notice, setNotice] = useState("");
+  const [retry, setRetry] = useState(0);
+  const activeDirection = search.type === "one-way" ? "OUTBOUND" : direction;
+  const { type, from, to, date, secondDate, count, children, infants } = search;
+  const searchKey = JSON.stringify([
+    type,
+    from,
+    to,
+    date,
+    secondDate,
+    count,
+    children ?? 0,
+    infants ?? 0,
+    search.cabin,
+  ]);
+  const [previousSearchKey, setPreviousSearchKey] = useState(searchKey);
+  // Reset before committing effects so a new search never requests the old page.
+  if (previousSearchKey !== searchKey) {
+    setPreviousSearchKey(searchKey);
+    setPage(0);
+    setDirection("OUTBOUND");
+  }
+  useFocusEffect(
+    useCallback(() => {
+      void retry;
+      const controller = new AbortController();
+      setLoading(true);
       setError("");
-      try {
-        await b.selectFlight(flight);
-        if (b.legIndex < b.legs.length - 1) {
-          b.setLegIndex(b.legIndex + 1);
-          router.replace("/results");
-        } else router.push("/traveller");
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Chưa thể giữ chỗ. Vui lòng chọn lại chuyến bay.",
-        );
-      } finally {
-        selecting.current = false;
-        setBusy(false);
-      }
-    },
-    [b, session],
+      setItems([]);
+      setNotice("");
+      searchFlights(
+        {
+          type,
+          from,
+          to,
+          date,
+          secondDate,
+          count,
+          children,
+          infants,
+          cabin: "Phổ thông",
+        },
+        activeDirection,
+        page,
+        controller.signal,
+      )
+        .then((result) => {
+          if (!controller.signal.aborted) {
+            setItems(result.data);
+            setTotalPages(result.pagination.totalPages);
+            setTotal(result.pagination.totalElements);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!controller.signal.aborted)
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "Không tải được chuyến bay.",
+            );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+      return () => controller.abort();
+    }, [
+      type,
+      from,
+      to,
+      date,
+      secondDate,
+      count,
+      children,
+      infants,
+      activeDirection,
+      page,
+      retry,
+    ]),
   );
-  useEffect(() => {
-    if (resumeSelection !== "1") {
-      resumed.current = false;
-      return;
-    }
-    if (session && !resumed.current) {
-      resumed.current = true;
-      router.setParams({ resumeSelection: undefined });
-      void choose(b.candidate);
-    }
-  }, [resumeSelection, session, choose, b.candidate]);
+  const priceFor = (flight: Flight) =>
+    search.cabin === "Thương gia"
+      ? (flight.businessPrice ?? Infinity)
+      : flight.price;
+  const results = items
+    .filter(
+      (flight) =>
+        flight.availableCabins?.includes(search.cabin) &&
+        (b.airline === "all" || flight.airline === b.airline) &&
+        priceFor(flight) <= b.maxPrice &&
+        (!b.morning || Number(flight.departure.slice(0, 2)) < 12),
+    )
+    .sort((a, z) => priceFor(a) - priceFor(z));
+  const leg =
+    activeDirection === "OUTBOUND" ? b.legs[0] : (b.legs[1] ?? b.legs[0]);
   return (
-    <Screen
-      design
-      title={b.legIndex ? "Chuyến về" : "Chuyến đi"}
-      right={
-        <Tap
-          label="Các chuyến bay đã lưu"
-          onPress={() => router.push("/saved")}
-        >
-          <Icon name="6-6622-imgBell" size={21} />
-        </Tap>
-      }
-    >
-      <Modal
-        visible={askLogin}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAskLogin(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#102A4380",
-            justifyContent: "center",
-            padding: 24,
-          }}
-        >
-          <Card>
-            <Label size={22} weight="bold">
-              Đăng nhập để đặt vé
-            </Label>
-            <Label>
-              Lựa chọn của bạn được lưu tạm. Giá và chỗ sẽ được kiểm tra lại sau
-              khi đăng nhập.
-            </Label>
-            <Button
-              title="Đăng nhập để tiếp tục"
-              onPress={() => {
-                setAskLogin(false);
-                router.push({
-                  pathname: "/login",
-                  params: { returnTo: "flight-selection" },
-                });
-              }}
-            />
-            <Button
-              title="Để sau"
-              secondary
-              onPress={() => setAskLogin(false)}
-            />
-          </Card>
-        </View>
-      </Modal>
-      {!!error && <Notice error>{error}</Notice>}
-      {busy && <Label color={c.primary}>Đang kiểm tra chỗ và giá…</Label>}
-      {b.legs.length > 1 && (
-        <Label color={c.primary} weight="semibold" size={13}>
-          CHẶNG {b.legIndex + 1} / {b.legs.length}
-        </Label>
-      )}
+    <Screen design title="Kết quả tìm chuyến">
       <TripSummary leg={leg} />
-      <Row style={{ gap: space.sm }}>
-        {[
-          ["best", "Tốt nhất"],
-          ["cheapest", "Giá thấp nhất"],
-        ].map(([key, label]) => (
-          <Tap
-            key={key}
-            selected={b.sort === key}
-            onPress={() => b.setSort(key as "best" | "cheapest")}
-            style={{
-              flex: 1,
-              borderWidth: 1,
-              borderColor: b.sort === key ? c.primary : c.line,
-              backgroundColor: b.sort === key ? c.tint : c.white,
-              borderRadius: radius.sm,
-              alignItems: "center",
-              paddingVertical: space.sm,
-            }}
-          >
-            <Label size={12} color={b.sort === key ? c.primary : c.ink}>
-              {label}
-            </Label>
-          </Tap>
-        ))}
-        <Tap
-          onPress={() => router.push("/filters")}
-          style={{
-            flex: 1,
-            borderWidth: 1,
-            borderColor: c.line,
-            borderRadius: radius.sm,
-            alignItems: "center",
-            paddingVertical: space.sm,
-          }}
-        >
-          <Row style={{ gap: 6 }}>
-            <Icon name="6-6622-imgSlidersHorizontal" size={14} />
-            <Label size={12}>Bộ lọc</Label>
-          </Row>
-        </Tap>
-      </Row>
-      <Label size={12} muted>
-        {results.length} chuyến bay · VND · Đã gồm thuế phí
-      </Label>
-      {results.map((flight, i) => (
-        <Card
-          key={flight.id}
-          selected={i === 0}
-          style={{ padding: 14, gap: 10 }}
-        >
-          <Row>
-            <View
-              style={{
-                padding: 7,
-                borderRadius: radius.sm,
-                backgroundColor: c.tint,
+      {type === "round-trip" && (
+        <Row>
+          {(["OUTBOUND", "RETURN"] as const).map((value) => (
+            <Tap
+              key={value}
+              selected={activeDirection === value}
+              onPress={() => {
+                setDirection(value);
+                setPage(0);
               }}
             >
-              <Icon name="6-6622-imgPlane1" size={17} />
-            </View>
-            <Tap
-              disabled={busy}
-              onPress={() => void choose(flight)}
-              style={{ flex: 1, minHeight: 36 }}
-            >
-              <Label size={13} weight="semibold">
-                {flight.airline}
-              </Label>
-              <Label size={11} muted>
-                {flight.number}
+              <Label weight="semibold">
+                {value === "OUTBOUND" ? "Chuyến đi" : "Chuyến về"}
               </Label>
             </Tap>
-            {i === 0 ? (
-              <Badge>Đề xuất</Badge>
-            ) : (
-              <Tap
-                label={
-                  b.favorites.includes(flight.id)
-                    ? "Bỏ lưu chuyến bay"
-                    : "Lưu chuyến bay"
-                }
-                selected={b.favorites.includes(flight.id)}
-                onPress={() =>
-                  b.setFavorites((ids) =>
-                    ids.includes(flight.id)
-                      ? ids.filter((id) => id !== flight.id)
-                      : [...ids, flight.id],
-                  )
-                }
-                style={{ paddingHorizontal: space.sm }}
-              >
-                {b.favorites.includes(flight.id) ? (
-                  <Label color={c.primary} weight="semibold" size={11}>
-                    Đã lưu
-                  </Label>
-                ) : (
-                  <Icon name="6-6622-imgHeart" size={19} />
-                )}
-              </Tap>
-            )}
-          </Row>
-          <Tap
-            label={`Chọn ${flight.airline} ${flight.departure}, ${money(b.priceFor(flight))}`}
-            disabled={busy}
-            onPress={() => void choose(flight)}
-          >
-            <FlightTimes flight={flight} leg={leg} plane="6-6622-imgPlane2" />
-          </Tap>
-          <Divider />
-          <Label size={12} muted>
-            Chọn hạng vé cho {b.legIndex === 0 ? "chặng đi" : "chặng về"}
-          </Label>
-          <Row>
-            {(["Phổ thông", "Thương gia"] as const).map((cabin) => (
-              <Tap
-                key={cabin}
-                label={`Chọn ${flight.number} ${cabin}`}
-                disabled={busy}
-                onPress={() => void choose({ ...flight, cabin })}
-                style={{
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: c.primary,
-                  borderRadius: 10,
-                  backgroundColor: c.tint,
-                  padding: 10,
-                }}
-              >
-                <Label size={12}>{cabin}</Label>
-                <Label size={16} weight="bold">
-                  {money(flightPrice(flight, cabin))}
-                </Label>
-              </Tap>
-            ))}
-          </Row>
-        </Card>
-      ))}
-      {!results.length && (
-        <View style={{ paddingVertical: space.xxl, gap: space.lg }}>
-          <Label size={20} weight="semibold">
-            Chưa có chuyến bay phù hợp
-          </Label>
-          <Label muted>Thử bỏ bớt bộ lọc để xem thêm lựa chọn.</Label>
+          ))}
+        </Row>
+      )}
+      <Row>
+        <Tap onPress={() => router.push("/search")}>
+          <Label>Đổi tìm kiếm</Label>
+        </Tap>
+        <Tap onPress={() => router.push("/filters")}>
+          <Label>Bộ lọc</Label>
+        </Tap>
+      </Row>
+      {loading ? (
+        <Notice>Đang tìm chuyến bay…</Notice>
+      ) : error ? (
+        <>
+          <Notice error>{error}</Notice>
           <Button
-            title="Xóa bộ lọc"
-            onPress={() => {
-              b.setAirline("all");
-              b.setNonstop(false);
-              b.setMaxPrice(10000000);
-              b.setMorning(false);
-            }}
+            title="Thử lại"
+            onPress={() => setRetry((value) => value + 1)}
           />
-        </View>
+        </>
+      ) : (
+        <>
+          <Label size={12} muted>
+            {total} chuyến từ máy chủ · {results.length} phù hợp trên trang này
+          </Label>
+          <Notice>
+            Giá một người lớn, một chiều, đã gồm VAT. Chức năng đặt vé sẽ có khi
+            hệ thống hỗ trợ giữ chỗ.
+          </Notice>
+          {!!notice && <Notice>{notice}</Notice>}
+          {results.map((flight) => (
+            <Card key={flight.id}>
+              <Label weight="semibold">
+                {flight.airline} · {flight.number}
+              </Label>
+              <FlightTimes flight={flight} leg={leg} plane="6-6622-imgPlane2" />
+              <Label size={12} muted>
+                Giờ địa phương tại từng sân bay
+              </Label>
+              {flight.arrivalAt && (
+                <Label size={12} muted>
+                  Ngày đến: {flight.arrivalAt.slice(0, 10)}
+                </Label>
+              )}
+              <Row>
+                {flight.availableCabins?.map((cabin) => (
+                  <Tap
+                    key={cabin}
+                    label={`Chọn ${flight.number} ${cabin}`}
+                    onPress={() =>
+                      setNotice(
+                        "Chức năng đặt vé hiện chưa khả dụng. Chưa tạo đơn hoặc giữ chỗ cho chuyến bay này.",
+                      )
+                    }
+                    style={{ flex: 1, paddingVertical: 12 }}
+                  >
+                    <Label>{cabin}</Label>
+                    <Label weight="bold">
+                      {money(
+                        cabin === "Thương gia"
+                          ? flight.businessPrice!
+                          : flight.price,
+                      )}
+                    </Label>
+                  </Tap>
+                ))}
+              </Row>
+            </Card>
+          ))}
+          {!results.length && (
+            <>
+              <Notice>
+                {total
+                  ? "Không có chuyến phù hợp bộ lọc trên trang này."
+                  : "Không có chuyến đang mở bán đủ chỗ trong ngày đã chọn."}
+              </Notice>
+              <Button
+                secondary
+                title="Xóa bộ lọc"
+                onPress={() => {
+                  b.setAirline("all");
+                  b.setNonstop(false);
+                  b.setMaxPrice(10000000);
+                  b.setMorning(false);
+                }}
+              />
+            </>
+          )}
+          {totalPages > 1 && (
+            <Row>
+              <Button
+                secondary
+                title="Trang trước"
+                disabled={page === 0}
+                onPress={() => setPage((value) => value - 1)}
+              />
+              <Label>
+                {page + 1}/{totalPages}
+              </Label>
+              <Button
+                secondary
+                title="Trang sau"
+                disabled={page + 1 >= totalPages}
+                onPress={() => setPage((value) => value + 1)}
+              />
+            </Row>
+          )}
+        </>
       )}
     </Screen>
   );

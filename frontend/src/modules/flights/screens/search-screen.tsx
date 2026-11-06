@@ -14,24 +14,33 @@ import { Screen } from "@/shared/components/screen";
 import { SelectField } from "@/shared/components/fields";
 import { colors as c, radius, space } from "@/shared/theme";
 
+const destinationImages: Record<string, number> = {
+  HAN: require("../../../../assets/hoan-kiem-lake.jpg"),
+  PQC: require("../../../../assets/phu-quoc-beach.jpg"),
+  DAD: require("../../../../assets/da-nang-beach.jpg"),
+};
+
 export default function SearchScreen() {
   const b = useBooking();
   const { search: s, setSearch } = b;
+  const destination = airport(s.to);
+  const destinationImage = destinationImages[s.to];
   const [error, setError] = useState("");
   const select = (field: string) =>
     router.push({ pathname: "/options", params: { field } });
   const search = () => {
     const today = new Date();
     const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    if (!s.from || !s.to) return setError("Vui lòng chọn điểm đi và điểm đến.");
     if (s.from === s.to)
       return setError("Điểm đi và điểm đến của mỗi chặng phải khác nhau.");
     if (!validDate(s.date) || s.date < todayISO)
       return setError("Vui lòng chọn ngày khởi hành từ hôm nay trở đi.");
     if (
       s.type !== "one-way" &&
-      (!validDate(s.secondDate) || s.secondDate < s.date)
+      (!validDate(s.secondDate) || s.secondDate <= s.date)
     )
-      return setError("Ngày bay tiếp theo phải từ ngày khởi hành trở đi.");
+      return setError("Ngày về phải sau ngày khởi hành.");
     if (
       !Number.isInteger(s.count) ||
       s.count < 1 ||
@@ -61,7 +70,7 @@ export default function SearchScreen() {
       <Row
         style={{
           gap: space.xs,
-          backgroundColor: c.surface,
+          backgroundColor: c.background,
           padding: space.xs,
           borderRadius: radius.md,
         }}
@@ -75,7 +84,7 @@ export default function SearchScreen() {
               flex: 1,
               minHeight: 36,
               paddingVertical: space.sm,
-              backgroundColor: s.type === type ? c.white : c.surface,
+              backgroundColor: s.type === type ? c.white : c.background,
               alignItems: "center",
               borderRadius: radius.sm,
             }}
@@ -90,6 +99,7 @@ export default function SearchScreen() {
         style={{
           borderWidth: 1,
           borderColor: c.line,
+          backgroundColor: c.surface,
           borderRadius: radius.lg,
           padding: space.lg,
           gap: space.md,
@@ -174,18 +184,26 @@ export default function SearchScreen() {
             THÀNH PHỐ ĐANG VẪY GỌI
           </Label>
           <Label size={17} weight="semibold">
-            Hà Nội đang chờ bạn.
+            {destination.city} đang chờ bạn.
           </Label>
           <Label size={12} muted>
             Một lần tìm, muôn hành trình.
           </Label>
         </View>
-        <Image
-          source={require("../../../../assets/hoan-kiem-lake.jpg")}
-          style={{ width: 72, aspectRatio: 1, borderRadius: 10, flexShrink: 0 }}
-          contentFit="cover"
-          accessibilityLabel="Hồ Gươm Hà Nội"
-        />
+        {destinationImage ? (
+          <Image
+            source={destinationImage}
+            style={{ width: 72, aspectRatio: 1, borderRadius: 10, flexShrink: 0 }}
+            contentFit="cover"
+            accessibilityLabel={`Khám phá ${destination.city}`}
+          />
+        ) : (
+          <View
+            style={{ width: 72, aspectRatio: 1, alignItems: "center", justifyContent: "center" }}
+          >
+            <Icon name="home-design-imgPlaneLanding" size={36} />
+          </View>
+        )}
       </Row>
       {error ? <Notice error>{error}</Notice> : null}
     </Screen>

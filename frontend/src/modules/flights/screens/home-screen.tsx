@@ -1,76 +1,102 @@
-import { useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Modal, ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { Stack } from "expo-router/stack";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import type { AirportCode } from "@/modules/flights/types";
-import { airport } from "@/modules/flights/data/airports";
-import { getLegs } from "@/modules/flights/utils/trip";
+import { rememberAirports } from "@/modules/flights/data/airports";
+import { useAccount } from "@/modules/account/context/account-context";
+import { API_BASE_URL } from "@/shared/api/client";
+import {
+  loadHome,
+  type HomeData,
+  type HomeRoute,
+} from "../services/home-service";
 import { Button, Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { HomeIcon } from "@/modules/flights/components/home-icon";
 
 const teal = "#00858C";
 const ink = "#112B43";
 const muted = "#62717D";
-const routes: {
-  from: AirportCode;
-  to: AirportCode;
-  title: string;
-  price: string;
-}[] = [
-  { from: "SGN", to: "HAN", title: "Sài Gòn → Hà Nội", price: "1.494.000 đ" },
-  { from: "HAN", to: "DAD", title: "Hà Nội → Đà Nẵng", price: "1.090.000 đ" },
-  { from: "SGN", to: "PQC", title: "Sài Gòn → Phú Quốc", price: "890.000 đ" },
-];
-const city = (code: AirportCode) =>
-  code === "SGN" ? "Sài Gòn" : airport(code).city;
 const shortDate = (iso: string) => iso.split("-").reverse().join("/");
 
 export default function HomeScreen() {
   const inset = useSafeAreaInsets();
   const b = useBooking();
-  const [showAll, setShowAll] = useState(false);
+  const { session } = useAccount();
   const [notifications, setNotifications] = useState(false);
-  const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
-  const lock = useRef(false);
-  const upcoming = b.history
-    .filter((item) => item.status === "confirmed")
-    .flatMap((booking) =>
-      getLegs(booking.receipt.search).flatMap((leg, index) => {
-        const flight = booking.receipt.selected[index];
-        const departure = flight
-          ? new Date(`${leg.date}T${flight.departure}:00`).getTime()
-          : NaN;
-        return departure > Date.now()
-          ? [{ booking, leg, flight, departure }]
-          : [];
-      }),
-    )
-    .sort((a, z) => a.departure - z.departure)[0];
-  const openTicket = async () => {
-    if (!upcoming || lock.current) return;
-    lock.current = true;
-    setOpening(true);
-    setError("");
-    try {
-      await b.openBooking(upcoming.booking.id);
-      setNotifications(false);
-      router.push("/booking");
-    } catch {
-      setError("Chưa thể mở vé. Vui lòng thử lại.");
-    } finally {
-      lock.current = false;
-      setOpening(false);
-    }
-  };
-  const openRoute = (route: (typeof routes)[number]) => {
+  const [data, setData] = useState<HomeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      // Retry creates a request even when the token is unchanged.
+      void reload;
+      const controller = new AbortController();
+      setLoading(true);
+      setData(null);
+      setError("");
+      loadHome(session?.accessToken, controller.signal)
+        .then((result) => {
+          if (!controller.signal.aborted) setData(result);
+        })
+        .catch((reason: unknown) => {
+          if (!controller.signal.aborted)
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Không tải được trang chủ.",
+            );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+      return () => controller.abort();
+    }, [session?.accessToken, reload]),
+  );
+  const routes = data
+    ? [
+        ...(data.featuredRoute ? [data.featuredRoute] : []),
+        ...data.otherRoutes,
+      ].map((route) => ({
+        ...route,
+        from: route.origin.code,
+        to: route.destination.code,
+        title: `${route.origin.city} → ${route.destination.city}`,
+        price: `${route.priceFrom.amount.toLocaleString("vi-VN")} đ`,
+      }))
+    : [];
+  const upcoming = data?.upcomingFlight
+    ? {
+        leg: {
+          from: data.upcomingFlight.origin.code,
+          to: data.upcomingFlight.destination.code,
+          date: data.upcomingFlight.departureAt.slice(0, 10),
+        },
+        flight: {
+          departure: data.upcomingFlight.departureAt.slice(11, 16),
+          arrival: data.upcomingFlight.arrivalAt.slice(11, 16),
+        },
+        bookingCode: data.upcomingFlight.bookingCode,
+        originCity: data.upcomingFlight.origin.city,
+        destinationCity: data.upcomingFlight.destination.city,
+      }
+    : null;
+  const openRoute = (route: HomeRoute) => {
+    rememberAirports(
+      [route.origin, route.destination].map((item) => ({
+        ...item,
+        name: item.city,
+        countryName: "",
+      })),
+    );
     b.setSearch((previous) => ({
       ...previous,
-      from: route.from,
-      to: route.to,
+      from: route.origin.code as AirportCode,
+      to: route.destination.code as AirportCode,
       type: "one-way",
     }));
     router.push("/search");
@@ -140,7 +166,7 @@ export default function HomeScreen() {
                       {upcoming.leg.from}
                     </Label>
                     <Label size={14} color={muted}>
-                      {city(upcoming.leg.from)}
+                      {upcoming.originCity}
                     </Label>
                   </View>
                   <Row style={{ flex: 1, gap: 4 }}>
@@ -155,7 +181,7 @@ export default function HomeScreen() {
                       {upcoming.leg.to}
                     </Label>
                     <Label size={14} color={muted}>
-                      {city(upcoming.leg.to)}
+                      {upcoming.destinationCity}
                     </Label>
                   </View>
                 </Row>
@@ -174,37 +200,24 @@ export default function HomeScreen() {
                   <Label size={12}>
                     {upcoming.flight.departure} – {upcoming.flight.arrival}
                   </Label>
-                  <Tap
-                    label="Xem vé chuyến bay sắp tới"
-                    disabled={opening}
-                    onPress={() => void openTicket()}
-                    style={{ marginLeft: "auto" }}
-                  >
-                    <Row style={{ gap: 3 }}>
-                      <Label size={13} color={teal} weight="semibold">
-                        {opening ? "Đang mở…" : "Xem vé"}
-                      </Label>
-                      <Icon name="6-6622-imgChevronRight" size={16} />
-                    </Row>
-                  </Tap>
+                  <Label size={12}>Mã đặt chỗ: {upcoming.bookingCode}</Label>
                 </Row>
               </>
             ) : (
               <>
                 <Label size={16} weight="semibold">
-                  {b.historyLoading
+                  {loading
                     ? "Đang tải chuyến bay…"
                     : "Hành trình tiếp theo đang chờ bạn"}
                 </Label>
                 <Label size={13} color={muted}>
-                  {b.historyError ||
-                    "Chuyến bay đã xác nhận sẽ xuất hiện tại đây."}
+                  {error || "Chuyến bay đã xác nhận sẽ xuất hiện tại đây."}
                 </Label>
-                {b.historyError ? (
+                {error ? (
                   <Button
                     secondary
                     title="Tải lại"
-                    onPress={() => void b.reloadHistory()}
+                    onPress={() => setReload((value) => value + 1)}
                   />
                 ) : (
                   <Tap onPress={() => router.push("/search")}>
@@ -219,74 +232,73 @@ export default function HomeScreen() {
           {!!error && <Notice error>{error}</Notice>}
         </View>
         <View style={styles.section}>
-          <Row style={{ justifyContent: "space-between", gap: 6 }}>
-            <Label size={20} weight="bold" color={ink}>
-              Gợi ý hành trình
-            </Label>
-            <Tap
-              label={showAll ? "Thu gọn các tuyến bay" : "Xem tất cả tuyến bay"}
-              onPress={() => setShowAll((v) => !v)}
-            >
-              <Row style={{ gap: 3 }}>
-                <Label size={13} weight="semibold" color={teal}>
-                  {showAll ? "Thu gọn" : "Xem tất cả"}
+          <Label size={20} weight="bold" color={ink}>
+            {data?.routeSectionTitle ?? "Gợi ý hành trình"}
+          </Label>
+          {featured ? (
+            <View style={styles.card}>
+              {featured.imageUrl && (
+                <Image
+                  source={{ uri: `${API_BASE_URL}${featured.imageUrl}` }}
+                  style={styles.photo}
+                  contentFit="cover"
+                  accessibilityLabel={featured.destination.city}
+                />
+              )}
+              <View style={styles.featureBody}>
+                <Label size={19} weight="bold" color={ink}>
+                  {featured.title}
                 </Label>
-                <Icon name="6-6622-imgChevronRight" size={16} />
-              </Row>
-            </Tap>
-          </Row>
-          <View style={styles.card}>
-            <Image
-              source={require("../../../../assets/hoan-kiem-lake.jpg")}
-              style={styles.photo}
-              contentFit="cover"
-              accessibilityLabel="Tháp Rùa trên Hồ Gươm, Hà Nội"
-            />
-            <View style={styles.featureBody}>
-              <Label size={19} weight="bold" color={ink}>
-                {featured.title}
-              </Label>
-              <Row
-                style={{
-                  justifyContent: "space-between",
-                  gap: 8,
-                  alignItems: "flex-end",
-                  flexWrap: "wrap",
-                }}
-              >
-                <View style={{ gap: 1 }}>
-                  <Label size={13} color={muted}>
-                    Một chiều từ
-                  </Label>
-                  <Label size={24} weight="bold" color={teal}>
-                    {featured.price}
-                  </Label>
-                </View>
-                <Tap
-                  label={`Chọn hành trình, ${featured.title}`}
-                  onPress={() => openRoute(featured)}
-                  style={styles.primaryButton}
+                <Row
+                  style={{
+                    justifyContent: "space-between",
+                    gap: 8,
+                    alignItems: "flex-end",
+                    flexWrap: "wrap",
+                  }}
                 >
-                  <Label size={13} weight="semibold" color="white">
-                    Chọn hành trình
-                  </Label>
-                </Tap>
-              </Row>
+                  <View style={{ gap: 1 }}>
+                    <Label size={13} color={muted}>
+                      Một chiều từ
+                    </Label>
+                    <Label size={24} weight="bold" color={teal}>
+                      {featured.price}
+                    </Label>
+                  </View>
+                  <Tap
+                    label={`Chọn hành trình, ${featured.title}`}
+                    onPress={() => openRoute(featured)}
+                    style={styles.primaryButton}
+                  >
+                    <Label size={13} weight="semibold" color="white">
+                      Chọn hành trình
+                    </Label>
+                  </Tap>
+                </Row>
+              </View>
             </View>
-          </View>
-          {(showAll ? routes.slice(1) : routes.slice(1, 2)).map((route) => (
+          ) : (
+            <Notice>
+              {loading
+                ? "Đang tải tuyến bay…"
+                : error
+                  ? "Chưa tải được tuyến bay."
+                  : "Hiện chưa có tuyến bay đang mở bán."}
+            </Notice>
+          )}
+          {routes.slice(1).map((route) => (
             <Tap
-              key={route.to}
+              key={route.routeId}
               label={`Chọn hành trình, ${route.title}`}
               onPress={() => openRoute(route)}
               style={[styles.card, styles.smallCard]}
             >
-              {route.to === "DAD" ? (
+              {route.imageUrl ? (
                 <Image
-                  source={require("../../../../assets/da-nang-beach.jpg")}
+                  source={{ uri: `${API_BASE_URL}${route.imageUrl}` }}
                   style={styles.thumbnail}
                   contentFit="cover"
-                  accessibilityLabel="Bãi biển Đà Nẵng"
+                  accessibilityLabel={route.destination.city}
                 />
               ) : (
                 <View
@@ -321,7 +333,7 @@ export default function HomeScreen() {
             color={muted}
             style={{ marginTop: -7, paddingHorizontal: 4 }}
           >
-            Giá tham khảo cho 1 người lớn
+            Giá cho 1 người lớn, một chiều, đã gồm VAT
           </Label>
         </View>
       </ScrollView>
@@ -346,13 +358,6 @@ export default function HomeScreen() {
                 ? `Bạn có chuyến bay ${upcoming.leg.from} → ${upcoming.leg.to} vào ${shortDate(upcoming.leg.date)} lúc ${upcoming.flight.departure}.`
                 : "Bạn chưa có thông báo mới."}
             </Label>
-            {upcoming && (
-              <Button
-                title="Xem vé"
-                loading={opening}
-                onPress={() => void openTicket()}
-              />
-            )}
             {!!error && <Notice error>{error}</Notice>}
             <Button
               secondary

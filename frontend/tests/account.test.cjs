@@ -164,8 +164,8 @@ test("registration rejects missing name or email instead of creating incomplete 
   }
 });
 
-test("password accepts exactly 8 characters and requires every criterion", () => {
-  for (const password of ["Abcd12!@", "LongerPassword1!"]) {
+test("password accepts exactly 12 characters and requires every criterion", () => {
+  for (const password of ["Abcdefgh12!@", "LongerPassword1!"]) {
     assert.equal(
       validateRegister({ ...registration, password, confirmPassword: password })
         .password,
@@ -174,6 +174,8 @@ test("password accepts exactly 8 characters and requires every criterion", () =>
   }
   for (const password of [
     "Abc12!@",
+    "Abcdefg12!@",
+    "A1!" + "é".repeat(35),
     "abcd12!@",
     "ABCD12!@",
     "Abcdef!@",

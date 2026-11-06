@@ -41,3 +41,4 @@ yarn-error.*
 /ios
 /android
 .DS_Store
+backend/src/main/resources/application.properties

@@ -17,7 +17,7 @@ export function validateLogin(input: LoginInput) {
 }
 
 export const passwordRequirements = [
-  { label: "Ít nhất 8 ký tự", test: (value: string) => value.length >= 8 },
+  { label: "Ít nhất 12 ký tự", test: (value: string) => value.length >= 12 },
   {
     label: "Có chữ hoa và chữ thường",
     test: (value: string) => /[A-Z]/.test(value) && /[a-z]/.test(value),
@@ -37,7 +37,9 @@ export function validateRegister(input: RegisterInput) {
     errors.email = "Vui lòng nhập email hợp lệ.";
   if (!passwordRequirements.every((rule) => rule.test(input.password)))
     errors.password =
-      "Ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.";
+      "Ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.";
+  if (new TextEncoder().encode(input.password).length > 72)
+    errors.password = "Mật khẩu tối đa 72 byte UTF-8.";
   if (!input.confirmPassword || input.password !== input.confirmPassword)
     errors.confirmPassword = "Mật khẩu xác nhận chưa khớp.";
   return errors;

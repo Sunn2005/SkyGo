@@ -57,3 +57,7 @@ npx expo export --platform ios --platform android --output-dir /tmp/skygo-native
 ## Luồng đặt vé đã duyệt
 
 Xem [booking-flow.md](docs/booking-flow.md) cho luồng một chiều/khứ hồi yêu cầu đăng nhập, CCCD/hộ chiếu, hành lý theo chặng, bảng giá VND, lịch sử trên thiết bị và PayOS mô phỏng. Luồng mới thay phần chọn ghế/thẻ/bảo hiểm mẫu; tài khoản mới vẫn chỉ tồn tại trong phiên.
+
+## Kết nối backend thật
+
+Module tài khoản và trang chủ đã gọi Spring Boot. Xem [hướng dẫn kết nối và giải thích luồng API](docs/frontend-backend.md). Các mô tả mock phía trên chỉ còn áp dụng cho luồng đặt vé/thanh toán và adapter mock dùng trong test.

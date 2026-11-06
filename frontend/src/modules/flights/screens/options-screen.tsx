@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { Host, Picker } from "@expo/ui";
 import { FlightCalendar, localDateISO } from "../components/flight-calendar";
 import { router, useLocalSearchParams } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
-import { continents, searchAirports } from "@/modules/flights/data/airports";
+import { AirportPicker } from "../components/airport-picker";
 import { dateLabel, validDate } from "@/shared/utils/date";
 import { type Cabin } from "@/modules/flights/types";
 import { ActionBar } from "@/modules/booking/components/action-bar";
-import { Field } from "@/shared/components/fields";
-import { Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
+import { Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
 
@@ -26,15 +25,6 @@ export default function OptionsScreen() {
   const { search, setSearch } = useBooking();
   const isDate = field === "date" || field === "secondDate";
   const isAirport = ["from", "to"].includes(field);
-  const [query, setQuery] = useState("");
-  const matchingAirports = searchAirports(query);
-  const [expandedContinent, setExpandedContinent] = useState<
-    (typeof continents)[number] | null
-  >(null);
-  const [collapsedSearch, setCollapsedSearch] = useState<
-    Partial<Record<(typeof continents)[number], boolean>>
-  >({});
-  const searching = query.trim().length > 0;
   const [today] = useState(() => localDateISO(new Date()));
   const minDate =
     field === "secondDate" && search.date > today ? search.date : today;
@@ -76,110 +66,7 @@ export default function OptionsScreen() {
       }
     >
       {isAirport && (
-        <>
-          <Field
-            label="Tìm thành phố hoặc sân bay"
-            placeholder="Tìm thành phố hoặc sân bay"
-            value={query}
-            onChangeText={(value) => {
-              setQuery(value);
-              setCollapsedSearch({});
-            }}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {continents.map((continent) => {
-            const items = matchingAirports.filter(
-              (a) => a.continent === continent,
-            );
-            if (!items.length) return null;
-            const expanded = searching
-              ? !collapsedSearch[continent]
-              : expandedContinent === continent;
-            const active = searching || expanded;
-            return (
-              <View key={continent} style={{ gap: 4 }}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${expanded ? "Thu gọn" : "Mở rộng"} ${continent}`}
-                  accessibilityState={{ expanded }}
-                  onPress={() => {
-                    if (searching)
-                      setCollapsedSearch((current) => ({
-                        ...current,
-                        [continent]: expanded,
-                      }));
-                    else setExpandedContinent(expanded ? null : continent);
-                  }}
-                  style={({ pressed }) => ({
-                    minHeight: 44,
-                    justifyContent: "center",
-                    opacity: pressed ? 0.65 : 1,
-                  })}
-                >
-                  <Row style={{ justifyContent: "space-between" }}>
-                    <Label
-                      size={15}
-                      weight="semibold"
-                      color={active ? c.primary : c.muted}
-                    >
-                      • {continent}
-                    </Label>
-                    <View
-                      style={{
-                        transform: [{ rotate: expanded ? "180deg" : "0deg" }],
-                      }}
-                    >
-                      <Icon name="home-design-imgChevronDown" size={16} />
-                    </View>
-                  </Row>
-                </Pressable>
-                {expanded &&
-                  items.map((a) => (
-                    <Tap
-                      key={a.code}
-                      label={`${a.name}, ${a.city}, ${a.code}`}
-                      selected={
-                        a.code === (field === "from" ? search.from : search.to)
-                      }
-                      onPress={() => {
-                        setSearch((s) => ({ ...s, [field]: a.code }));
-                        router.back();
-                      }}
-                      style={{
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: c.line,
-                      }}
-                    >
-                      <Row>
-                        <View style={{ flex: 1, gap: 3 }}>
-                          <Label size={14} weight="semibold">
-                            {a.name}
-                          </Label>
-                          <Label size={12} muted>
-                            {a.city} · {a.country}
-                          </Label>
-                        </View>
-                        <Label size={14} weight="semibold" color={c.primary}>
-                          {a.code}
-                        </Label>
-                      </Row>
-                    </Tap>
-                  ))}
-              </View>
-            );
-          })}
-          {!matchingAirports.length && (
-            <View style={{ paddingVertical: 24, gap: 8 }}>
-              <Label weight="semibold">Không tìm thấy sân bay</Label>
-              <Label size={13} muted>
-                Thử tên thành phố, tên sân bay hoặc mã như SGN, CDG, SYD.
-              </Label>
-            </View>
-          )}
-        </>
+        <AirportPicker key={field} field={field === "to" ? "to" : "from"} />
       )}
       {isDate && (
         <>

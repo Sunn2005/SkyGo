@@ -30,7 +30,7 @@ export function Screen({
   const { horizontalPadding } = useResponsiveLayout();
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: design ? "#EEEEEE" : c.white }}
+      style={{ flex: 1, backgroundColor: c.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={inset.top + 56}
     >
@@ -39,7 +39,7 @@ export function Screen({
           title,
           headerTitleAlign: "left",
           headerShadowVisible: false,
-          headerStyle: { backgroundColor: design ? "#EEEEEE" : c.white },
+          headerStyle: { backgroundColor: c.background },
           headerTintColor: c.ink,
           headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 18 },
           headerBackButtonDisplayMode: "minimal",
@@ -138,7 +138,7 @@ export function Screen({
             paddingBottom: Math.max(inset.bottom, 12),
             borderTopWidth: 1,
             borderTopColor: c.line,
-            backgroundColor: design ? "#EEEEEE" : c.white,
+            backgroundColor: c.background,
           }}
         >
           {footer}

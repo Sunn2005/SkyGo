@@ -30,7 +30,7 @@ export default function RootLayout() {
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          backgroundColor: colors.white,
+          backgroundColor: colors.background,
         }}
       >
         <ActivityIndicator
@@ -55,12 +55,12 @@ export default function RootLayout() {
               flex: 1,
               width: "100%",
               maxWidth: Platform.OS === "web" ? 402 : 600,
-              backgroundColor: colors.white,
+              backgroundColor: colors.background,
             }}
           >
             <Stack
               screenOptions={{
-                contentStyle: { backgroundColor: colors.white },
+                contentStyle: { backgroundColor: colors.background },
                 headerBackButtonDisplayMode: "minimal",
               }}
             >

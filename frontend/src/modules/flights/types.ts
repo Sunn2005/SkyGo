@@ -1,9 +1,11 @@
-import { airports } from "./data/airports";
-
-export type AirportCode = (typeof airports)[number]["code"];
+export type AirportCode = string;
 export type TripType = "one-way" | "round-trip";
 export type Cabin = "Phổ thông" | "Thương gia";
 export type Flight = {
+  source?: "api";
+  availableCabins?: Cabin[];
+  departureAt?: string;
+  arrivalAt?: string;
   cabin?: Cabin;
   id: string;
   airline: string;

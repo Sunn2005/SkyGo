@@ -44,6 +44,10 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     setWarningDismissed(false);
   };
   const selectFlight = async (flight: Flight) => {
+    if (flight.source === "api")
+      throw new Error(
+        "Chưa có API giữ chỗ cho chuyến bay thật. Chưa tạo đơn đặt vé.",
+      );
     const next = selected.slice(0, legIndex + 1);
     next[legIndex] = flight;
     // reserve() validates new capacity before replacing the previous hold.

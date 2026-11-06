@@ -39,7 +39,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test:account": "node --test tests/account.test.cjs",
-    "test:booking": "node --test tests/booking.test.cjs"
+    "test:booking": "node --test tests/booking.test.cjs",
+    "test:api": "node --test tests/api.test.cjs"
   },
   "private": true
 }

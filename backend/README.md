@@ -11,7 +11,7 @@ Backend cho ứng dụng đặt vé máy bay SkyGo, sử dụng Java 21, Spring 
 | Danh mục khu vực/sân bay, tìm chuyến một chiều/khứ hồi | Đã có API | Đã nối API thật, có phân trang kết quả |
 | Giữ chỗ, báo giá, hành khách, review và hành lý | Đã có API | Chưa nối các API này |
 | Tạo đơn, mở lại đơn và giữ lại chỗ để thanh toán | Đã có API | Luồng booking/lịch sử vẫn dùng dịch vụ mô phỏng |
-| Thanh toán PayOS | Đã có API tạo link và webhook xác nhận | Chưa nối frontend; còn cần API kiểm tra trạng thái và đối soát tự động |
+| Thanh toán PayOS | Đã có API tạo link, webhook xác nhận và GET booking đọc trạng thái/vé | Chưa nối frontend; còn cần tra trạng thái từ PayOS và đối soát tự động |
 
 Màn kết quả hiện chỉ hiển thị chuyến thật và giá từ backend. Chọn hạng vé sẽ
 thông báo chưa thể đặt vé; không chuyển chuyến thật sang dịch vụ giữ chỗ mô phỏng.
@@ -111,6 +111,7 @@ Khi thay schema tiếp, thêm migration mới; giữ nguyên migration đã áp 
 | PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
 | POST /api/v1/bookings | Tạo đơn và payment PENDING từ review mới nhất; cần Idempotency-Key |
+| GET /api/v1/bookings/{bookingId} | Đọc chi tiết đơn và trạng thái thanh toán/vé của chủ đơn; không giữ chỗ lại |
 | POST /api/v1/bookings/{bookingId}/open-for-payment | Mở chi tiết đơn; dùng lại hold còn hạn hoặc kiểm tra và giữ lại chỗ trước khi trả dữ liệu |
 | POST /api/v1/bookings/{bookingId}/payment-link | Tạo hoặc lấy lại link/QR PayOS cho lượt giữ chỗ hiện hành |
 | POST /api/v1/payos/webhook | Nhận và xác minh thông báo PayOS, ghi giao dịch và xác nhận đơn hợp lệ |
@@ -729,6 +730,32 @@ booking và đặt `booking_review.used_at_utc`. Không trừ ghế hoặc gia h
 Lần đầu thành công trả 201, `Cache-Control: no-store`, gồm bookingId/bookingCode,
 trạng thái PENDING_PAYMENT, hạn hold, tổng tiền, passengerId và payment PENDING.
 Chưa tạo ticket hoặc invoice ở bước này.
+
+`GET /api/v1/bookings/{bookingId}` cần Bearer token, trả 401 khi chưa đăng nhập,
+404 khi không tìm thấy đơn thuộc tài khoản. Response bọc trong `data`, có
+`Cache-Control: no-store`. App dùng để kiểm tra trạng thái ở màn QR và hiển thị
+màn thành công/chi tiết đặt chỗ. Các truy vấn chạy trong transaction read-only
+REPEATABLE_READ để payment, vé và hóa đơn thuộc cùng một snapshot khi webhook
+đang cập nhật. Không gọi PayOS, tạo link, trừ chỗ, gia hạn hoặc chạy dọn hold.
+
+Response gồm bookingId/bookingCode/bookingStatus/createdAt/serverTime, tripType,
+passengerCounts/contact, price/currency/payment, legs, passengers và invoice.
+`seatHold` là lượt giữ chỗ mới nhất liên kết với booking, có seatHoldId/status/
+expiresAt/expired; không lấy nhầm hold ban đầu sau khi đơn được giữ chỗ lại.
+Nếu hold vẫn ACTIVE trong DB nhưng đã qua hạn, `expired=true`; trạng thái lưu
+trong DB giữ nguyên để scheduler xử lý. Hold CONSUMED đã hoàn tất thì expired=false.
+App ngừng cho thanh toán khi expired=true dù bookingStatus chưa được scheduler
+đổi sang EXPIRED. Đơn PAID có payment SUCCEEDED, paidAt, ticketNumber của từng
+khách và invoice(invoiceId,issuedAt); invoice/ticketNumber null nếu chưa được cấp.
+Giấy tờ chỉ trả maskedNumber. Hành trình, giá và quyền lợi lấy từ snapshot booking.
+
+`passengers[].benefits[]` trả theo từng direction, gồm carryOnMaxKg,
+checkedPieces (số kiện miễn cước), extraCheckedPieces (số kiện mua thêm),
+includedMealsPerLeg, seatType và strollerPieces. Màn thành công hiển thị ký gửi
+bằng số kiện, không ghép với trọng lượng mỗi kiện; API GET không trả các trường
+checkedPieceMaxKg/checkedPieceMaxLinearCm. Giá trị hành lý không được cố định
+chung cho cả nhóm khách hoặc gộp lẫn hai chiều. Màn thành công chỉ được mở khi
+bookingStatus=PAID và payment.status=SUCCEEDED.
 
 `POST /api/v1/bookings/{bookingId}/open-for-payment` dùng Bearer token của chủ đơn,
 không có body và trả `Cache-Control: no-store`. App gọi khi người dùng mở lại

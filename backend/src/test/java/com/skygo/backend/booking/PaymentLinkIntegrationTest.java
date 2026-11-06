@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.skygo.backend.auth.model.AuthSession;
@@ -299,6 +300,103 @@ class PaymentLinkIntegrationTest extends PricingFixture {
   private void postWebhook(String payload) throws Exception {
     mvc.perform(post("/api/v1/payos/webhook").contentType("application/json")
         .content(payload)).andExpect(status().isOk());
+  }
+
+  @Test void bookingGetRequiresOwnerAndDoesNotExpireOrReholdAtTheDeadline() throws Exception {
+    var c=createBooking(true);
+    String url="/api/v1/bookings/"+c.booking().bookingId();
+    mvc.perform(get(url)).andExpect(status().isUnauthorized());
+    mvc.perform(get(url).with(as(otherUser))).andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("BOOKING_NOT_FOUND"));
+    mvc.perform(get("/api/v1/bookings/not-found").with(as(user))).andExpect(status().isNotFound());
+    String json=mvc.perform(get(url).with(as(user))).andExpect(status().isOk())
+        .andExpect(header().string("Cache-Control","no-store"))
+        .andExpect(jsonPath("$.data.seatHold.seatHoldId").value(c.hold().seatHoldId()))
+        .andExpect(jsonPath("$.data.seatHold.expired").value(false))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].checkedPieces").value(1))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].extraCheckedPieces").value(1))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].checkedPieceMaxKg").doesNotExist())
+        .andExpect(jsonPath("$.data.passengers[0].document.maskedNumber").value("****5678"))
+        .andExpect(jsonPath("$.data.passengers[0].ticketNumber").isEmpty())
+        .andExpect(jsonPath("$.data.invoice").isEmpty())
+        .andReturn().getResponse().getContentAsString();
+    assertFalse(json.contains("000012345678"));
+    when(clock.instant()).thenReturn(c.hold().expiresAt());
+    mvc.perform(get(url).with(as(user))).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.bookingStatus").value("PENDING_PAYMENT"))
+        .andExpect(jsonPath("$.data.serverTime").value(c.hold().expiresAt().toString()))
+        .andExpect(jsonPath("$.data.seatHold.expired").value(true));
+    assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM seat_hold WHERE public_id=?",String.class,c.hold().seatHoldId()));
+    assertEquals(3,seats(outFare));
+    assertEquals(0,countForBooking("payment_attempt",c.booking().bookingId()));
+    var reopened=resume.open(user,c.booking().bookingId());
+    mvc.perform(get(url).with(as(user))).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.seatHold.seatHoldId").value(reopened.seatHoldId()))
+        .andExpect(jsonPath("$.data.seatHold.expiresAt").value(reopened.holdExpiresAt().toString()));
+    assertNotEquals(c.hold().seatHoldId(),reopened.seatHoldId());
+  }
+
+  @Test void bookingGetReflectsWebhookPaymentTicketsAndInvoice() throws Exception {
+    var c=createBooking(false);
+    String url="/api/v1/bookings/"+c.booking().bookingId();
+    var link=paymentLinks.create(user,c.booking().bookingId()).paymentLink();
+    postWebhook(webhook(link.orderCode(),link.amount(),"get-paid-ref"));
+    mvc.perform(get(url).with(as(user))).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.bookingStatus").value("PAID"))
+        .andExpect(jsonPath("$.data.payment.status").value("SUCCEEDED"))
+        .andExpect(jsonPath("$.data.payment.amount").value(link.amount()))
+        .andExpect(jsonPath("$.data.payment.paidAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.seatHold.status").value("CONSUMED"))
+        .andExpect(jsonPath("$.data.seatHold.expired").value(false))
+        .andExpect(jsonPath("$.data.passengers[0].ticketNumber").isNotEmpty())
+        .andExpect(jsonPath("$.data.invoice.invoiceId").isNotEmpty())
+        .andExpect(jsonPath("$.data.invoice.issuedAt").isNotEmpty());
+  }
+
+  @Test void bookingGetReturnsRoundTripSnapshotAndBaggageCountsPerPassengerAndLeg() throws Exception {
+    var h=hold(TripType.ROUND_TRIP,1,1,1);
+    service.leg(user,h.seatHoldId(),"OUTBOUND",new SeatHoldLegRequest(outFlight,
+        com.skygo.backend.booking.model.SeatHold.CabinClass.BUSINESS));
+    h=service.leg(user,h.seatHoldId(),"RETURN",new SeatHoldLegRequest(backFlight,
+        com.skygo.backend.booking.model.SeatHold.CabinClass.ECONOMY));
+    var s=session(user);
+    var review=reviews.create(s,reviewRequest(h,List.of(passenger("a",PassengerType.ADULT),
+        passenger("c",PassengerType.CHILD),passenger("i",PassengerType.INFANT))));
+    var saved=baggage.save(s,review.reviewId(),new BaggageSaveRequest(review.version(),List.of(
+        new BaggageSaveRequest.Selection("a",com.skygo.backend.booking.model.SeatHold.Direction.OUTBOUND,1),
+        new BaggageSaveRequest.Selection("a",com.skygo.backend.booking.model.SeatHold.Direction.RETURN,2),
+        new BaggageSaveRequest.Selection("c",com.skygo.backend.booking.model.SeatHold.Direction.OUTBOUND,0),
+        new BaggageSaveRequest.Selection("c",com.skygo.backend.booking.model.SeatHold.Direction.RETURN,0))));
+    var b=creation.create(s,UUID.randomUUID().toString(),new BookingCreateRequest(review.reviewId(),saved.version())).booking();
+    jdbc.update("UPDATE airport SET city='Catalog changed' WHERE code='ZHB'");
+    jdbc.update("UPDATE flight_fare SET adult_base_fare=999 WHERE id=?",outFare);
+    mvc.perform(get("/api/v1/bookings/"+b.bookingId()).with(as(user))).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.legs.length()").value(2))
+        .andExpect(jsonPath("$.data.legs[0].destination.city").value("ZHB"))
+        .andExpect(jsonPath("$.data.legs[0].cabinClass").value("BUSINESS"))
+        .andExpect(jsonPath("$.data.legs[1].cabinClass").value("ECONOMY"))
+        .andExpect(jsonPath("$.data.passengers.length()").value(3))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].checkedPieces").value(2))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].extraCheckedPieces").value(1))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[1].extraCheckedPieces").value(2))
+        .andExpect(jsonPath("$.data.passengers[2].benefits[0].seatType").isEmpty())
+        .andExpect(jsonPath("$.data.price.totalAmount").value(b.totalAmount()));
+  }
+
+  @Test void bookingGetExposesReconciliationAndExpiredHoldWithoutIssuingTickets() throws Exception {
+    var c=createBooking(false);
+    var link=paymentLinks.create(user,c.booking().bookingId()).paymentLink();
+    postWebhook(webhook(link.orderCode(),link.amount()+1,"get-reconcile-ref"));
+    when(clock.instant()).thenReturn(c.hold().expiresAt());
+    expiry.expireDue();
+    mvc.perform(get("/api/v1/bookings/"+c.booking().bookingId()).with(as(user)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.bookingStatus").value("EXPIRED"))
+        .andExpect(jsonPath("$.data.payment.status").value("RECONCILIATION_REQUIRED"))
+        .andExpect(jsonPath("$.data.seatHold.expired").value(true))
+        .andExpect(jsonPath("$.data.passengers[0].ticketNumber").isEmpty())
+        .andExpect(jsonPath("$.data.invoice").isEmpty());
+    assertEquals(0,countForBooking("ticket",c.booking().bookingId()));
   }
 
   @Test void outOfRangeSignedAmountIsRejectedBeforeItCanWrapToAnotherAmount() throws Exception {

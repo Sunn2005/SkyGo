@@ -15,7 +15,7 @@ public class BookingOpenRepository {
   private final JdbcTemplate jdbc;
   public BookingOpenRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
-  // Called while the owner, booking and payment rows are locked by ResumePaymentService.
+  // Mutating callers hold domain locks; read-only callers use a repeatable-read snapshot.
   public BookingOpenResponse load(long bookingId, SeatHold hold) {
     var main = jdbc.queryForObject("""
         SELECT b.public_id,b.booking_code,b.booking_status,b.created_at_utc,b.trip_type,

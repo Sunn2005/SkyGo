@@ -206,12 +206,16 @@ export default function ResultsScreen() {
               <Notice>
                 {total
                   ? "Không có chuyến phù hợp bộ lọc trên trang này."
-                  : "Không có chuyến đang mở bán đủ chỗ trong ngày đã chọn."}
+                  : "Không tìm thấy chuyến bay phù hợp với hành trình và ngày đã chọn. Hãy thử điểm đến hoặc ngày khác."}
               </Notice>
               <Button
                 secondary
-                title="Xóa bộ lọc"
+                title={total ? "Xóa bộ lọc" : "Đổi tìm kiếm"}
                 onPress={() => {
+                  if (!total) {
+                    router.push("/search");
+                    return;
+                  }
                   b.setAirline("all");
                   b.setNonstop(false);
                   b.setMaxPrice(10000000);

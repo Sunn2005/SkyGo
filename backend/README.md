@@ -126,8 +126,10 @@ Khi thay schema tiếp, thêm migration mới (V7...); giữ nguyên migration �
 
 Khi mở một nhóm, gọi `GET /api/v1/airports?regionCode=VIETNAM`. Khi chọn điểm đến,
 thêm điểm đi: `GET /api/v1/airports?regionCode=VIETNAM&origin=SGN`.
-`origin` chỉ lọc sân bay có tuyến trực tiếp đang hoạt động và chuyến tương lai đang
-bán; chưa kiểm tra ngày tìm kiếm hoặc số ghế. Không có điểm đến phù hợp trả `data: []`.
+`origin` được kiểm tra là mã sân bay đi đang hoạt động nhưng không lọc danh sách:
+mọi sân bay đang hoạt động, kể cả sân bay đi và sân bay chưa có tuyến/chuyến,
+đều xuất hiện. Khi tìm chuyến, điểm đi trùng điểm đến trả lỗi validation;
+không có chuyến phù hợp với ngày và số ghế thì trả `data: []`.
 FE thu gọn/mở nhóm, ẩn nhóm có kết quả rỗng ở màn điểm đến, và kiểm tra lại điểm đến
 khi đổi điểm đi. Có thể lấy nhiều nhóm trong một lần bằng cách bỏ `regionCode`, rồi
 gom theo `regionCode` trên UI; vẫn phải tải hết các trang.

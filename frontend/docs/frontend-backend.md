@@ -70,7 +70,7 @@ Typecheck đạt; lint không có lỗi (còn hai warning cũ ở payos-screen).
 ## API danh mục và tìm chuyến sau khi pull
 
 - `GET /api/v1/regions`: nhóm khu vực theo thứ tự BE.
-- `GET /api/v1/airports?keyword=...&origin=SGN&page=0&size=100`: điểm đi lấy tất cả sân bay đang hoạt động; điểm đến truyền origin để chỉ lấy tuyến đang bán. Bộ chọn nhóm khu vực → quốc gia → sân bay, tải hết trang danh mục và hủy request cũ khi gõ từ khóa.
+- `GET /api/v1/airports?keyword=...&origin=SGN&page=0&size=100`: điểm đi và điểm đến đều lấy tất cả sân bay đang hoạt động, kể cả sân bay chưa có tuyến/chuyến; origin được backend kiểm tra nhưng không lọc danh sách. Bộ chọn nhóm khu vực → quốc gia → sân bay, tải hết trang danh mục và hủy request cũ khi gõ từ khóa. Nếu chọn trùng điểm đi/đến, frontend báo lỗi khi tìm; nếu không có chuyến phù hợp, màn kết quả báo rỗng và cho đổi tìm kiếm.
 - `POST /api/v1/flights/search`: gửi tripType, origin, destination, departureDate, returnDate (chỉ khứ hồi), passengerCounts, direction, page, size. Với chiều về vẫn gửi origin/destination ban đầu, dùng direction RETURN để BE tự đảo tuyến.
 - Danh sách sân bay và chuyến bay trả `{data: [], pagination: {...}}`, khác auth/home chỉ cần bóc data. Client dùng `unwrap: false` để giữ phân trang.
 - Màn kết quả có nút chuyển chiều đi/về và phân trang, hiển thị giờ địa phương từ offset và đúng các hạng vé BE trả về; không tự tạo giá hạng vé thiếu. Giá hiện là một người lớn đã VAT, không phải tổng tiền gia đình.

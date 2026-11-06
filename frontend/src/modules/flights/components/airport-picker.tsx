@@ -90,8 +90,7 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
       )}
       {!loading && !error && !items.length && (
         <Notice>
-          Không có sân bay phù hợp. Điểm đến chỉ gồm tuyến đang mở bán từ điểm
-          đi.
+          Không có sân bay phù hợp với từ khóa tìm kiếm.
         </Notice>
       )}
       {regions.map((region) => {

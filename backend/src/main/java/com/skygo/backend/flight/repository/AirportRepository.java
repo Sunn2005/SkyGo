@@ -4,8 +4,6 @@ import com.skygo.backend.flight.contract.AirportPageResponse;
 import com.skygo.backend.flight.contract.AirportPageResponse.Pagination;
 import com.skygo.backend.flight.contract.AirportResponse;
 import com.skygo.backend.flight.contract.RegionResponse;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,7 +43,7 @@ public class AirportRepository {
   }
 
   public AirportPageResponse airports(String keyword, String country, String region,
-      String origin, int page, int size, Instant now) {
+      int page, int size) {
     var where = new StringBuilder(" FROM airport a WHERE a.is_active = 1");
     var args = new ArrayList<Object>();
     if (country != null) {
@@ -55,19 +53,6 @@ public class AirportRepository {
     if (region != null) {
       where.append(" AND a.region_code = ?");
       args.add(region);
-    }
-    if (origin != null) {
-      where.append("""
-           AND a.code <> ? AND EXISTS (
-             SELECT 1 FROM air_route r
-             JOIN airport o ON o.id = r.origin_airport_id
-             JOIN flight f ON f.route_id = r.id
-             WHERE r.destination_airport_id = a.id AND o.code = ? AND o.is_active = 1
-               AND r.is_active = 1 AND f.sale_status = 'ON_SALE' AND f.departure_at_utc > ?)
-          """);
-      args.add(origin);
-      args.add(origin);
-      args.add(Timestamp.from(now));
     }
     if (keyword != null && !keyword.isEmpty()) {
       where.append("""

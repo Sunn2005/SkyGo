@@ -4,7 +4,6 @@ import com.skygo.backend.flight.contract.AirportPageResponse;
 import com.skygo.backend.flight.contract.RegionResponse;
 import com.skygo.backend.flight.exception.AirportQueryException;
 import com.skygo.backend.flight.repository.AirportRepository;
-import java.time.Clock;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,11 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AirportService {
   private final AirportRepository repository;
-  private final Clock clock;
 
-  public AirportService(AirportRepository repository, Clock clock) {
+  public AirportService(AirportRepository repository) {
     this.repository = repository;
-    this.clock = clock;
   }
 
   public List<RegionResponse> regions() {
@@ -37,7 +34,7 @@ public class AirportService {
     if (origin != null && (!origin.matches("[A-Z]{3}") || !repository.activeOriginExists(origin)))
       throw new AirportQueryException("origin", "Điểm đi phải là mã sân bay đang hoạt động.");
     return repository.airports(keyword == null ? null : keyword.strip(), country, region,
-        origin, page, size, clock.instant());
+        page, size);
   }
 
   private int integer(String field, String value, int min, int max) {

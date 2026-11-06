@@ -163,6 +163,12 @@ Bản sao dữ liệu từ review sang booking được tạo trong cùng transa
 | `ticket` | `ticket_number VARCHAR(64)`, `booking_id`, `booking_passenger_id`, `issued_at_utc` | UQ ticket number và passenger ID; FK ghép bảo đảm passenger thuộc booking. Một vé bao phủ mọi chiều trong đơn; lấy directions từ `booking_leg`. |
 | `invoice` | `public_id VARCHAR(64)`, `booking_id`, `issued_at_utc` | UQ public ID và booking ID. Hóa đơn hiển thị snapshot hành trình, `fare_subtotal`, VAT 10%, `total_amount`, liên hệ từ booking và các giao dịch đã xác minh qua payment; không phải hóa đơn điện tử thuế. |
 
+V7 bổ sung cho `payment_transaction`: `payment_link_id VARCHAR(64)?`,
+`handling_status VARCHAR(24)` (`PENDING`, `APPLIED`, `RECONCILIATION_REQUIRED`),
+`handling_reason VARCHAR(64)?`. V8 cho phép `currency` là mã gồm ba chữ in hoa
+để lưu cả giao dịch sai tiền tệ phục vụ đối soát; các bảng booking/payment/attempt
+vẫn chỉ chấp nhận VND. Giao dịch sai link hoặc tiền tệ không được dùng cấp vé.
+
 ### 6.4. Chống tạo đơn trùng
 
 Thông tin chống trùng được lưu trực tiếp trong `booking`, không có bảng `idempotency_request`. `idempotency_key` dùng collation phân biệt hoa thường; `request_hash` là SHA-256 của nội dung request tạo đơn đã chuẩn hóa, bao gồm `reviewId`. Phạm vi khóa là một tài khoản và endpoint tạo đơn; bảng này chỉ dùng cho thao tác tạo đơn. Hai trường được giữ trong suốt thời gian lưu booking.

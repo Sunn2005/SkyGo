@@ -101,7 +101,7 @@ public class PayosHttpGateway implements PayosGateway {
     return hmac(input, key);
   }
 
-  private static boolean validResponseSignature(JsonNode data, String signature, String key) {
+  static boolean validResponseSignature(JsonNode data, String signature, String key) {
     if (!data.isObject() || signature == null || !signature.matches("[a-fA-F0-9]{64}"))
       return false;
     var sorted = new TreeMap<String, String>();

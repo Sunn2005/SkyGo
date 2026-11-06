@@ -46,6 +46,7 @@ public class SecurityConfig {
                         org.springframework.http.HttpMethod.POST,
                         "/api/v1/auth/register",
                         "/api/v1/auth/login",
+                        "/api/v1/payos/webhook",
                         "/api/v1/flights/search")
                     .permitAll()
                     .requestMatchers(

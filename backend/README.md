@@ -11,7 +11,7 @@ Backend cho ứng dụng đặt vé máy bay SkyGo, sử dụng Java 21, Spring 
 | Danh mục khu vực/sân bay, tìm chuyến một chiều/khứ hồi | Đã có API | Đã nối API thật, có phân trang kết quả |
 | Giữ chỗ, báo giá, hành khách, review và hành lý | Đã có API | Chưa nối các API này |
 | Tạo đơn, mở lại đơn và giữ lại chỗ để thanh toán | Đã có API | Luồng booking/lịch sử vẫn dùng dịch vụ mô phỏng |
-| Thanh toán PayOS | Đã có migration chuẩn bị dữ liệu | Chưa có luồng thanh toán thật hoàn chỉnh |
+| Thanh toán PayOS | Đã có API tạo link và webhook xác nhận | Chưa nối frontend; còn cần API kiểm tra trạng thái và đối soát tự động |
 
 Màn kết quả hiện chỉ hiển thị chuyến thật và giá từ backend. Chọn hạng vé sẽ
 thông báo chưa thể đặt vé; không chuyển chuyến thật sang dịch vụ giữ chỗ mô phỏng.
@@ -86,10 +86,12 @@ test cần quyền CREATE/DROP database tạm. Kiểm thử SQL này không thay
 API cập nhật sẽ bổ sung ở bước sau.
 
 Flyway V6 bổ sung các bảng `payment_attempt`, `payment_transaction` và mở rộng
-payment để chuẩn bị tích hợp PayOS, giữ tương thích dữ liệu QR_SIMULATION cũ.
-Migration này chưa đồng nghĩa đã có API tạo link, webhook và đối soát PayOS hoàn chỉnh.
+payment để tích hợp PayOS, giữ tương thích dữ liệu QR_SIMULATION cũ. V7 lưu
+kết quả xử lý và lý do cần đối soát cho từng giao dịch webhook. V8 cho phép lưu
+nguyên mã tiền tệ ba chữ in hoa của giao dịch để giữ lại cả thông báo sai tiền
+tệ phục vụ đối soát; booking, payment và attempt vẫn chỉ dùng VND.
 
-Khi thay schema tiếp, thêm migration mới (V7...); giữ nguyên migration đã áp dụng.
+Khi thay schema tiếp, thêm migration mới; giữ nguyên migration đã áp dụng.
 `clean` của Flyway được tắt. Fixture `database/home-demo-seed.sql` yêu cầu schema V4.
 
 ## Danh sách API
@@ -111,6 +113,7 @@ Khi thay schema tiếp, thêm migration mới (V7...); giữ nguyên migration �
 | POST /api/v1/bookings | Tạo đơn và payment PENDING từ review mới nhất; cần Idempotency-Key |
 | POST /api/v1/bookings/{bookingId}/open-for-payment | Mở chi tiết đơn; dùng lại hold còn hạn hoặc kiểm tra và giữ lại chỗ trước khi trả dữ liệu |
 | POST /api/v1/bookings/{bookingId}/payment-link | Tạo hoặc lấy lại link/QR PayOS cho lượt giữ chỗ hiện hành |
+| POST /api/v1/payos/webhook | Nhận và xác minh thông báo PayOS, ghi giao dịch và xác nhận đơn hợp lệ |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 | POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
 | POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ, tạo review version 1 và trả đủ dữ liệu review; cần đăng nhập |
@@ -759,10 +762,31 @@ trong IDE). File `.env` không tự được Spring Boot nạp. `PAYOS_BASE_URL`
 `PAYOS_NOT_CONFIGURED` trước khi tạo attempt. PayOS từ chối rõ ràng thì attempt
 chuyển `FAILED` và có thể thử lại với cùng orderCode. Nếu phản hồi không rõ
 (timeout/5xx), attempt giữ `CREATING`, trả `PAYMENT_LINK_UNVERIFIED` và không
-tạo link khác cho hold đó cho đến khi được đối soát. API này không đánh dấu đã
-thanh toán, không tạo vé; cần webhook và API kiểm tra trạng thái trước khi thử
-giao dịch thật. `returnUrl`/`cancelUrl` phải là địa chỉ hoạt động cho luồng
-chuyển hướng PayOS; webhook chưa được hiện thực ở bước này.
+tạo link khác cho hold đó cho đến khi được đối soát. API tạo link không đánh dấu
+đã thanh toán hoặc tạo vé. Cần API kiểm tra trạng thái và đối soát tự động trước
+khi thử giao dịch thật. `returnUrl`/`cancelUrl` phải là địa chỉ hoạt động cho
+luồng chuyển hướng PayOS.
+
+`POST /api/v1/payos/webhook` là endpoint công khai để PayOS gửi thông báo,
+không dùng Bearer token. Backend xác minh HMAC-SHA256 của `data` bằng
+`PAYOS_CHECKSUM_KEY` trước khi xử lý. Chữ ký sai trả 400; lỗi xử lý trả lỗi để
+PayOS gửi lại; thông báo hợp lệ đã xử lý trả 200. Mẫu xác nhận webhook có
+`orderCode` không thuộc hệ thống được xác nhận nhưng không thay đổi dữ liệu.
+Webhook thật đối chiếu orderCode, paymentLinkId, reference, currency và tổng
+tiền, ghi `payment_transaction` theo reference duy nhất để chống xử lý trùng.
+Webhook đến khi attempt còn CREATING và chưa lưu paymentLinkId trả 503 để
+PayOS gửi lại, không ghi nhận nhầm là sai link. Số tiền/orderCode phải là số
+nguyên dương nằm trong phạm vi Long; dữ liệu vượt phạm vi trả 400.
+Hold còn ACTIVE và chưa hết hạn thì booking, payment, attempt, hold, vé của mỗi
+hành khách và invoice được cập nhật trong cùng một transaction. Tiền đến muộn,
+sai link hoặc dư được lưu để đối soát và không cấp vé. Tiền thiếu được ghi nhận;
+chỉ khi tổng tiền nhận đúng số tiền đơn và hold còn hiệu lực mới cấp vé.
+
+Khi dùng Cloudflare quick tunnel chuyển tiếp `http://localhost:8080`, URL đăng
+ký tại PayOS có dạng `https://<subdomain>.trycloudflare.com/api/v1/payos/webhook`.
+Mỗi lần URL tunnel thay đổi cần đăng ký lại webhook với PayOS. Giữ checksum key
+trên backend; frontend đọc trạng thái đơn từ API backend, không dựa vào trang
+returnUrl để tự xác nhận đã thanh toán.
 
 `data` gồm bookingId, bookingCode, bookingStatus, createdAt, tripType,
 passengerCounts, contact, seatHoldId/holdExpiresAt hiện hành (nullable), price

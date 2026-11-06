@@ -82,6 +82,7 @@ Khi thay schema tiếp, thêm migration mới (V6...); giữ nguyên migration �
 | PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
 | PUT /api/v1/seat-holds/{seatHoldId}/passenger-counts | Đổi số khách và điều chỉnh ghế ở tất cả các chiều |
 | POST /api/v1/bookings | Tạo đơn và payment PENDING từ review mới nhất; cần Idempotency-Key |
+| POST /api/v1/bookings/{bookingId}/open-for-payment | Mở chi tiết đơn; dùng lại hold còn hạn hoặc kiểm tra và giữ lại chỗ trước khi trả dữ liệu |
 | POST /api/v1/bookings/{bookingId}/resume-payment | Chủ động giữ lại chỗ cho đơn hết hạn; giữ nguyên đơn và giá |
 | POST /api/v1/booking-quotes | Tổng tiền nhóm khách và toàn bộ hành trình trên hold; cần đăng nhập |
 | POST /api/v1/booking-reviews | Kiểm tra hành khách/liên hệ, tạo review version 1 và trả đủ dữ liệu review; cần đăng nhập |
@@ -695,6 +696,25 @@ booking và đặt `booking_review.used_at_utc`. Không trừ ghế hoặc gia h
 Lần đầu thành công trả 201, `Cache-Control: no-store`, gồm bookingId/bookingCode,
 trạng thái PENDING_PAYMENT, hạn hold, tổng tiền, passengerId và payment PENDING.
 Chưa tạo ticket hoặc invoice ở bước này.
+
+`POST /api/v1/bookings/{bookingId}/open-for-payment` dùng Bearer token của chủ đơn,
+không có body và trả `Cache-Control: no-store`. App gọi khi người dùng mở lại
+đơn từ lịch sử. Nếu hold của chính đơn còn hạn, API trả nguyên hạn cũ và không
+trừ chỗ lần nữa. Nếu đơn `EXPIRED` chưa có payment attempt PayOS, backend kiểm
+tra toàn bộ chiều bay và hạng vé, giữ lại chỗ 15 phút trong một transaction rồi
+trả chi tiết đơn. Không đủ chỗ trả 409 `INSUFFICIENT_CAPACITY` mà không giữ
+một phần hành trình. Đơn đã `PAID` hoặc `RECONCILIATION_REQUIRED` vẫn có thể
+đọc chi tiết nhưng không tạo hold mới. Link PayOS cũ chưa thể xác minh được trả
+409 `PAYMENT_STATUS_UNVERIFIED`; phần đối soát với PayOS sẽ được nối khi tích
+hợp API tạo link/webhook. API không tạo QR.
+
+`data` gồm bookingId, bookingCode, bookingStatus, createdAt, tripType,
+passengerCounts, contact, seatHoldId/holdExpiresAt hiện hành (nullable), price
+gồm fareSubtotal/extraBaggageAmount/vatRate/vatAmount/totalAmount, currency,
+payment, legs (snapshot chuyến/sân bay/giờ địa phương/hạng vé/giá từng nhóm)
+và passengers (thông tin đã lưu, số giấy tờ che, quyền lợi và hành lý từng
+chiều, ticketNumber nếu đã cấp). Không trả số giấy tờ đầy đủ hoặc giá chuyến
+bay hiện tại để thay cho snapshot đã chốt.
 
 Số giấy tờ trong booking được mã hóa AES-256-GCM bằng khóa riêng, gắn với
 bookingId và passengerId. Đặt `SKYGO_BOOKING_DOCUMENT_ENCRYPTION_KEY` là Base64 của

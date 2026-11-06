@@ -26,6 +26,28 @@ class BookingCreationIntegrationTest extends PricingFixture {
   @MockitoSpyBean BookingDocumentEncryptionService documents;
 
   @Test
+  void openingActiveBookingReturnsSavedTripPassengerBaggageAndPriceWithoutExtendingHold() throws Exception {
+    var hold=hold(TripType.ONE_WAY,1,0,0);
+    var session=session(user);
+    var review=reviews.create(session,reviewRequest(hold,List.of(passenger("a",PassengerType.ADULT))));
+    var saved=baggage.save(session,review.reviewId(),new BaggageSaveRequest(1L,
+        List.of(new BaggageSaveRequest.Selection("a",Direction.OUTBOUND,1))));
+    var created=bookings.create(session,"open-snapshot",new BookingCreateRequest(review.reviewId(),saved.version()));
+    mvc.perform(post("/api/v1/bookings/"+created.booking().bookingId()+"/open-for-payment")
+        .with(asSession(session)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.seatHoldId").value(hold.seatHoldId()))
+        .andExpect(jsonPath("$.data.holdExpiresAt").value(hold.expiresAt().toString()))
+        .andExpect(jsonPath("$.data.legs[0].flightId").value(outFlight))
+        .andExpect(jsonPath("$.data.legs[0].fares.length()").value(1))
+        .andExpect(jsonPath("$.data.passengers[0].givenNames").value("An"))
+        .andExpect(jsonPath("$.data.passengers[0].document.maskedNumber").value("****5678"))
+        .andExpect(jsonPath("$.data.passengers[0].benefits[0].extraCheckedPieces").value(1))
+        .andExpect(jsonPath("$.data.price.extraBaggageAmount").value(325000));
+    assertEquals(3,seats(outFare));
+  }
+
+  @Test
   void createsBookingAndPaymentFromLatestReviewWithoutReservingSeatsAgain() throws Exception {
     var hold=hold(TripType.ONE_WAY,1,0,1);
     var session=session(user);

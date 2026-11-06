@@ -60,7 +60,7 @@ class AuthIntegrationTest {
   void migrationAndAuthLifecycle() throws Exception {
     assertEquals(0, flyway.migrate().migrationsExecuted);
     assertEquals(
-        23,
+        25,
         jdbc.queryForObject(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()",
             Integer.class));

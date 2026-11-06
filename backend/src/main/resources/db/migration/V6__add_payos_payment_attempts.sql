@@ -1,35 +1,11 @@
 -- V5 already versions booking reviews. This migration adds real PayOS payment
 -- records while retaining QR_SIMULATION for historical bookings.
--- V1 created unnamed CHECK constraints, so discover their MariaDB names.
-SET @payment_method_constraint = (
-    SELECT constraint_name FROM information_schema.check_constraints
-    WHERE constraint_schema = DATABASE() AND table_name = 'payment'
-      AND LOCATE('QR_SIMULATION', check_clause) > 0
-    LIMIT 1
-);
-SET @drop_payment_method = CONCAT('ALTER TABLE payment DROP CONSTRAINT `',
-    REPLACE(@payment_method_constraint, '`', '``'), '`');
-PREPARE drop_payment_method FROM @drop_payment_method;
-EXECUTE drop_payment_method;
-DEALLOCATE PREPARE drop_payment_method;
-
-SET @payment_status_constraint = (
-    SELECT constraint_name FROM information_schema.check_constraints
-    WHERE constraint_schema = DATABASE() AND table_name = 'payment'
-      AND LOCATE('PENDING', check_clause) > 0
-      AND LOCATE('EXPIRED', check_clause) > 0
-    LIMIT 1
-);
-SET @drop_payment_status = CONCAT('ALTER TABLE payment DROP CONSTRAINT `',
-    REPLACE(@payment_status_constraint, '`', '``'), '`');
-PREPARE drop_payment_status FROM @drop_payment_status;
-EXECUTE drop_payment_status;
-DEALLOCATE PREPARE drop_payment_status;
-
+-- V1 declared column-level CHECKs, which MariaDB replaces when the columns
+-- are modified. They cannot be removed with DROP CONSTRAINT.
 ALTER TABLE payment
-    MODIFY COLUMN status VARCHAR(32) COLLATE utf8mb4_nopad_bin NOT NULL,
-    ADD CONSTRAINT ck_payment_method_payos CHECK (method IN ('QR_SIMULATION', 'PAYOS')),
-    ADD CONSTRAINT ck_payment_status_payos
+    MODIFY COLUMN method VARCHAR(24) COLLATE utf8mb4_nopad_bin NOT NULL
+        CHECK (method IN ('QR_SIMULATION', 'PAYOS')),
+    MODIFY COLUMN status VARCHAR(32) COLLATE utf8mb4_nopad_bin NOT NULL
         CHECK (status IN ('PENDING', 'SUCCEEDED', 'EXPIRED', 'RECONCILIATION_REQUIRED')),
     ADD UNIQUE KEY uq_payment_id_booking (id, booking_id);
 

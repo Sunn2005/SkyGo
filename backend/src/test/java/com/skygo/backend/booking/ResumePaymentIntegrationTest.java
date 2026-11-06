@@ -14,6 +14,48 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named="SKYGO_TEST_DB_URL",matches=".+")
 class ResumePaymentIntegrationTest extends BookingFixture {
   @Test
+  void openingExpiredBookingReholdsBeforeReturningItsSnapshotAndReusesActiveHold() throws Exception {
+    String booking=expiredBooking(true);
+    String path="/api/v1/bookings/"+booking+"/open-for-payment";
+    assertEquals(4,seats(outFare)); assertEquals(4,seats(backFare));
+    mvc.perform(post(path).with(as(otherUser))).andExpect(status().isNotFound());
+    String first=mvc.perform(post(path).with(as(user)))
+        .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+        .andExpect(jsonPath("$.data.bookingStatus").value("PENDING_PAYMENT"))
+        .andExpect(jsonPath("$.data.payment.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.price.totalAmount").value(2200))
+        .andExpect(jsonPath("$.data.legs.length()").value(2))
+        .andExpect(jsonPath("$.data.contact.email").value("test@example.com"))
+        .andReturn().getResponse().getContentAsString();
+    String hold=com.jayway.jsonpath.JsonPath.read(first,"$.data.seatHoldId");
+    assertEquals(2,seats(outFare)); assertEquals(2,seats(backFare));
+    mvc.perform(post(path).with(as(user))).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.seatHoldId").value(hold));
+    assertEquals(2,seats(outFare)); assertEquals(2,seats(backFare));
+    assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM seat_hold WHERE booking_id=(SELECT id FROM booking WHERE public_id=?) AND status='ACTIVE'",Integer.class,booking));
+  }
+
+  @Test
+  void openingExpiredBookingWithMissingSeatsRollsBackAndOldPayosAttemptBlocksRehold() throws Exception {
+    String booking=expiredBooking(true);
+    String path="/api/v1/bookings/"+booking+"/open-for-payment";
+    jdbc.update("UPDATE flight_fare SET available_seats=0 WHERE id=?",backFare);
+    mvc.perform(post(path).with(as(user))).andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_CAPACITY"));
+    assertEquals(4,seats(outFare));
+    jdbc.update("UPDATE flight_fare SET available_seats=4 WHERE id=?",backFare);
+    jdbc.update("""
+        INSERT INTO payment_attempt(payment_id,booking_id,seat_hold_id,order_code,status,amount,expires_at_utc)
+        SELECT p.id,b.id,b.seat_hold_id,987654321,'CREATING',p.amount,h.expires_at_utc
+        FROM booking b JOIN payment p ON p.booking_id=b.id
+          JOIN seat_hold h ON h.id=b.seat_hold_id WHERE b.public_id=?
+        """,booking);
+    mvc.perform(post(path).with(as(user))).andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error.code").value("PAYMENT_STATUS_UNVERIFIED"));
+    assertEquals(4,seats(outFare)); assertEquals(4,seats(backFare));
+  }
+
+  @Test
   void expiredBookingResumesAtomicallyAndRetriesReuseHoldAndPayment() throws Exception {
     String booking=expiredBooking(true);
     String payment=jdbc.queryForObject("SELECT p.public_id FROM payment p JOIN booking b ON b.id=p.booking_id WHERE b.public_id=?",String.class,booking);

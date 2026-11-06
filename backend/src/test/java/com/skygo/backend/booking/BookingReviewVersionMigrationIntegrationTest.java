@@ -47,7 +47,7 @@ class BookingReviewVersionMigrationIntegrationTest {
       var before=jdbc.queryForList(historyQuery);
       var orders=jdbc.queryForList("SELECT id,review_id,fare_subtotal,extra_baggage_amount,vat_rate,vat_amount,total_amount FROM booking ORDER BY id");
       var payments=jdbc.queryForList("SELECT id,booking_id,amount,status FROM payment ORDER BY id");
-      var flyway=Flyway.configure().dataSource(source).cleanDisabled(true).load();
+      var flyway=Flyway.configure().dataSource(source).target("5").cleanDisabled(true).load();
       assertEquals(1,flyway.migrate().migrationsExecuted);
       flyway.validate();
       assertEquals(0,flyway.migrate().migrationsExecuted);

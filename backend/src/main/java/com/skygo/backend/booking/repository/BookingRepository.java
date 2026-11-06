@@ -36,6 +36,10 @@ public class BookingRepository {
     return jdbc.query("SELECT direction,flight_fare_id FROM booking_leg WHERE booking_id=? ORDER BY direction",
         (rs,n) -> new BookedLeg(Direction.valueOf(rs.getString("direction")), rs.getLong("flight_fare_id")), id);
   }
+  public boolean hasPaymentAttempt(long bookingId) {
+    return jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM payment_attempt WHERE booking_id=?)",
+        Integer.class, bookingId) != 0;
+  }
   public void expire(long id) {
     jdbc.update("UPDATE booking SET booking_status='EXPIRED',updated_at_utc=UTC_TIMESTAMP(6) WHERE id=? AND booking_status='PENDING_PAYMENT'", id);
     jdbc.update("UPDATE payment SET status='EXPIRED',updated_at_utc=UTC_TIMESTAMP(6) WHERE booking_id=? AND status='PENDING'", id);

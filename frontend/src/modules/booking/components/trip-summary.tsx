@@ -7,7 +7,7 @@ import type { Leg } from "@/modules/flights/types";
 import { useBooking } from "../context/booking-context";
 
 export function TripSummary({ leg }: { leg?: Leg }) {
-  const { legs, search, selected } = useBooking();
+  const { legs, search, selected, remaining, isLive } = useBooking();
   const route = leg ?? legs[0];
   return (
     <Row
@@ -29,6 +29,13 @@ export function TripSummary({ leg }: { leg?: Leg }) {
             ? ` · ${selected.map((f) => f.cabin ?? search.cabin).join(" / ")}`
             : ""}
         </Label>
+        {isLive && remaining !== null && (
+          <Label size={12} color={remaining <= 300 ? c.primary : c.primary}>
+            {remaining > 0
+              ? `Giữ chỗ còn ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+              : "Giữ chỗ đã hết hạn"}
+          </Label>
+        )}
       </View>
     </Row>
   );

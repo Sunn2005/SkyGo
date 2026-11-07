@@ -1,3 +1,5 @@
+import { loginDestination } from "../utils/login-destination";
+import { useBooking } from "@/modules/booking/context/booking-context";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Stack } from "expo-router/stack";
@@ -49,23 +51,8 @@ export default function LoginScreen() {
       ? Math.max(0, Math.ceil((lock.until - now) / 1000))
       : 0;
 
-  const destinations = {
-    detail: "/results",
-    "flight-selection": "/results",
-    results: "/results",
-    traveller: "/traveller",
-    baggage: "/baggage",
-    payment: "/payment",
-    payos: "/payos",
-    booking: "/booking",
-    success: "/success",
-    bookings: "/bookings",
-  } as const;
-  const destination =
-    returnTo && Object.hasOwn(destinations, returnTo)
-      ? destinations[returnTo as keyof typeof destinations]
-      : "/";
-  const resumeFlight = returnTo === "flight-selection" || returnTo === "detail";
+  const { href: destination, resumeFlight } = loginDestination(returnTo);
+  const { setPendingFlight } = useBooking();
   useEffect(() => {
     if (session && resumeFlight)
       router.dismissTo({
@@ -128,9 +115,11 @@ export default function LoginScreen() {
             label="Quay lại"
             disabled={busy}
             style={{ width: 32 }}
-            onPress={() =>
-              router.canGoBack() ? router.back() : router.replace("/")
-            }
+            onPress={() => {
+              setPendingFlight(null);
+              if (router.canGoBack()) router.back();
+              else router.replace("/");
+            }}
           >
             <Icon name="6-6734-imgArrowLeft" size={20} />
           </Tap>
@@ -241,7 +230,10 @@ export default function LoginScreen() {
           <Tap
             label="Tiếp tục không cần đăng nhập"
             disabled={busy}
-            onPress={() => router.replace("/")}
+            onPress={() => {
+              setPendingFlight(null);
+              router.replace("/");
+            }}
             style={{
               borderWidth: 1,
               borderColor: colors.primary,

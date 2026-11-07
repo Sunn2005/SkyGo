@@ -185,8 +185,8 @@ export default function OptionsScreen() {
             </Picker>
           </Host>
           <Notice>
-            Giá vé mẫu đã gồm thuế/phí. Thương gia gồm 1 kiện ký gửi tối đa 32
-            kg.
+            Giá tìm kiếm là giá một người lớn đã gồm VAT. Quyền lợi hành lý và
+            tổng tiền của nhóm khách được xác nhận ở bước kiểm tra đặt vé.
           </Notice>
         </>
       )}

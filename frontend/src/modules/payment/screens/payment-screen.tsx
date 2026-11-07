@@ -18,7 +18,7 @@ import {
   InfoRow,
   passengerKind,
 } from "@/modules/booking/components/design";
-import { Label, Notice, Row, Tap } from "@/shared/components/ui";
+import { Button, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
 export default function PaymentScreen() {
@@ -26,6 +26,30 @@ export default function PaymentScreen() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const locked = useRef(false);
+  if (b.createdBooking)
+    return (
+      <Screen design title="Đã tạo đơn đặt vé">
+        <Panel>
+          <Label size={22} weight="bold">
+            {b.createdBooking.bookingCode}
+          </Label>
+          <InfoRow label="Trạng thái" value="Chờ thanh toán" />
+          <InfoRow
+            label="Tổng tiền"
+            value={money(b.createdBooking.totalAmount)}
+          />
+          <Label>
+            Hạn giữ chỗ:{" "}
+            {new Date(b.createdBooking.holdExpiresAt).toLocaleString("vi-VN")}
+          </Label>
+          <Notice>
+            Đơn đã được lưu trên hệ thống. Thanh toán PayOS chưa khả dụng; vé
+            chưa được cấp. Chỗ sẽ được trả lại khi hết hạn.
+          </Notice>
+        </Panel>
+        <Button title="Về trang chủ" onPress={() => router.replace("/")} />
+      </Screen>
+    );
   if (b.selected.length !== b.legs.length) return <Redirect href="/" />;
   const pay = async () => {
     if (locked.current || !b.passengersConfirmed) return;
@@ -44,7 +68,7 @@ export default function PaymentScreen() {
     setError("");
     try {
       await b.checkout();
-      router.push("/payos");
+      if (!b.isLive) router.push("/payos");
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -72,10 +96,10 @@ export default function PaymentScreen() {
       step={2}
       footer={
         <ActionBar
-          title="Tiếp tục thanh toán"
+          title={b.isLive ? "Tạo đơn đặt vé" : "Tiếp tục thanh toán"}
           price={b.total}
           loading={pending}
-          disabled={!b.passengersConfirmed}
+          disabled={!b.passengersConfirmed || pending}
           onPress={() => void pay()}
         />
       }
@@ -196,10 +220,13 @@ export default function PaymentScreen() {
             <Label size={11} muted weight="semibold">
               ĐÃ BAO GỒM · MỖI KHÁCH CÓ GHẾ RIÊNG
             </Label>
-            {[
-              "Xách tay 10 kg",
-              `Ký gửi 1 kiện × ${includedBagWeight(flight.cabin ?? b.search.cabin)} kg`,
-            ].map((text) => (
+            {(b.isLive
+              ? []
+              : [
+                  "Xách tay 10 kg",
+                  `Ký gửi 1 kiện × ${includedBagWeight(flight.cabin ?? b.search.cabin)} kg`,
+                ]
+            ).map((text) => (
               <Row
                 key={text}
                 style={{
@@ -215,28 +242,53 @@ export default function PaymentScreen() {
                 <Label size={13}>{text}</Label>
               </Row>
             ))}
-            {b.travellers.map((p, i) =>
-              p.kind === "infant" ? (
-                <Label key={i} size={12} muted>
-                  {fullName(p)} · Em bé không mua hành lý riêng
-                </Label>
-              ) : (p.extraBags[l] ?? 0) > 0 ? (
-                <View key={i} style={{ gap: 4 }}>
-                  {line}
-                  <Label size={13} weight="semibold">
-                    Mua thêm
+            {b.isLive &&
+              b.review?.legs[l]?.passengerBaggage.map((item) => {
+                const policy = b.review!.legs[l].checkedBaggagePolicy;
+                const traveller =
+                  b.travellers[Number(item.clientPassengerId.slice(1)) - 1];
+                return (
+                  <View key={item.clientPassengerId} style={{ gap: 4 }}>
+                    <Label size={13} weight="semibold">
+                      {traveller ? fullName(traveller) : item.clientPassengerId}
+                    </Label>
+                    <Label size={12}>
+                      Xách tay {item.included.carryOnMaxKg} kg · Ký gửi{" "}
+                      {item.included.checkedPieces} kiện × {policy.pieceMaxKg}{" "}
+                      kg
+                    </Label>
+                    {item.selectedExtraPieces > 0 && (
+                      <Label size={12}>
+                        Mua thêm {item.selectedExtraPieces} kiện:{" "}
+                        {money(item.extraAmountExclVat)} chưa VAT
+                      </Label>
+                    )}
+                  </View>
+                );
+              })}
+            {!b.isLive &&
+              b.travellers.map((p, i) =>
+                p.kind === "infant" ? (
+                  <Label key={i} size={12} muted>
+                    {fullName(p)} · Em bé không mua hành lý riêng
                   </Label>
-                  <InfoRow
-                    label={`${p.extraBags[l]} kiện × ${money(EXTRA_BAG_PRICE)}`}
-                    value={money((p.extraBags[l] ?? 0) * EXTRA_BAG_PRICE)}
-                    bold
-                  />
-                  <Label size={11} muted>
-                    Áp dụng cho {fullName(p)} · {l ? "Chặng về" : "Chặng đi"}
-                  </Label>
-                </View>
-              ) : null,
-            )}
+                ) : (p.extraBags[l] ?? 0) > 0 ? (
+                  <View key={i} style={{ gap: 4 }}>
+                    {line}
+                    <Label size={13} weight="semibold">
+                      Mua thêm
+                    </Label>
+                    <InfoRow
+                      label={`${p.extraBags[l]} kiện × ${money(EXTRA_BAG_PRICE)}`}
+                      value={money((p.extraBags[l] ?? 0) * EXTRA_BAG_PRICE)}
+                      bold
+                    />
+                    <Label size={11} muted>
+                      Áp dụng cho {fullName(p)} · {l ? "Chặng về" : "Chặng đi"}
+                    </Label>
+                  </View>
+                ) : null,
+              )}
           </View>
         ))}
         {b.baggage === 0 && (
@@ -250,8 +302,18 @@ export default function PaymentScreen() {
           Chi tiết giá
         </Label>
         {line}
-        <InfoRow label="Vé đã gồm thuế, phí" value={money(b.fare)} />
-        <InfoRow label="Hành lý mua thêm" value={money(b.baggage)} />
+        <InfoRow
+          label={b.isLive ? "Vé chưa VAT" : "Vé đã gồm thuế, phí"}
+          value={money(b.fare)}
+        />
+        <InfoRow
+          label={b.isLive ? "Hành lý mua thêm chưa VAT" : "Hành lý mua thêm"}
+          value={money(b.baggage)}
+        />
+        {b.isLive && (
+          <InfoRow label="VAT" value={money(b.review?.price.vatAmount ?? 0)} />
+        )}
+        <InfoRow label="Tổng thanh toán" value={money(b.total)} bold />
       </Panel>
       {!b.passengersConfirmed && (
         <Notice error>

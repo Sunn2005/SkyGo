@@ -5,7 +5,7 @@ import { useBooking } from "@/modules/booking/context/booking-context";
 import { Field } from "@/shared/components/fields";
 import { Button, Label, Notice, Tap } from "@/shared/components/ui";
 import {
-  loadAirports,
+  loadPickerAirports,
   loadRegions,
   type ApiAirport,
   type Region,
@@ -20,7 +20,7 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const origin = field === "to" ? search.from : undefined;
+  const excludedCode = field === "to" ? search.from : undefined;
   useEffect(() => {
     void retry;
     const controller = new AbortController();
@@ -30,18 +30,7 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
       setItems([]);
       Promise.all([
         loadRegions(controller.signal),
-        (async () => {
-          const all: ApiAirport[] = [];
-          let page = 0;
-          while (true) {
-            const result = await loadAirports(
-              { keyword: query, origin, page },
-              controller.signal,
-            );
-            all.push(...result.data);
-            if (++page >= result.pagination.totalPages) return all;
-          }
-        })(),
+        loadPickerAirports(query, excludedCode, controller.signal),
       ])
         .then(([groups, airports]) => {
           if (!controller.signal.aborted) {
@@ -65,7 +54,7 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, origin, retry]);
+  }, [query, excludedCode, retry]);
   return (
     <>
       <Field
@@ -89,16 +78,20 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
         </>
       )}
       {!loading && !error && !items.length && (
-        <Notice>
-          Không có sân bay phù hợp với từ khóa tìm kiếm.
-        </Notice>
+        <Notice>Không có sân bay phù hợp với từ khóa.</Notice>
       )}
       {regions.map((region) => {
         const airports = items.filter(
           (item) => item.regionCode === region.regionCode,
         );
         if (!airports.length) return null;
-        const open = !!query.trim() || expanded === region.regionCode;
+        const open =
+          !!query.trim() ||
+          expanded === region.regionCode ||
+          (expanded === null &&
+            regions.filter((group) =>
+              items.some((item) => item.regionCode === group.regionCode),
+            ).length === 1);
         const countries = [
           ...new Set(airports.map((item) => item.countryName)),
         ];
@@ -106,7 +99,7 @@ export function AirportPicker({ field }: { field: "from" | "to" }) {
           <View key={region.regionCode} style={{ gap: 8 }}>
             <Tap
               label={`${open ? "Thu gọn" : "Mở rộng"} ${region.regionName}`}
-              onPress={() => setExpanded(open ? null : region.regionCode)}
+              onPress={() => setExpanded(open ? "" : region.regionCode)}
             >
               <Label weight="semibold">
                 {open ? "▾" : "▸"} {region.regionName}

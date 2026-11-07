@@ -25,6 +25,7 @@ export async function apiRequest<T>(
     token?: string;
     signal?: AbortSignal;
     unwrap?: boolean;
+    headers?: Record<string, string>;
   } = {},
 ): Promise<T> {
   const controller = new AbortController();
@@ -37,6 +38,7 @@ export async function apiRequest<T>(
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
+        ...options.headers,
         ...(options.body !== undefined
           ? { "Content-Type": "application/json" }
           : {}),

@@ -1,5 +1,5 @@
 import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { View } from "react-native";
 import { Host, Picker } from "@expo/ui";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
@@ -18,10 +18,14 @@ export default function TravellerScreen() {
   const b = useBooking();
   const { stackFields, stackDates } = useResponsiveLayout();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const locked = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [apiError, setApiError] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (b.selected.length !== b.legs.length) return <Redirect href="/" />;
-  const validate = () => {
+  const validate = async () => {
+    if (locked.current) return;
     const next = bookingErrors(
       b.search,
       b.selected,
@@ -31,11 +35,23 @@ export default function TravellerScreen() {
     );
     setErrors(next);
     if (Object.keys(next).length || !confirmed) return;
-    b.setPassengersConfirmed(true);
-    b.setEmail(b.email.trim());
-    b.setPhone(b.phone.trim());
-    if (returnTo === "payment") router.back();
-    else router.push("/payment");
+    locked.current = true;
+    setPending(true);
+    setApiError("");
+    try {
+      await b.confirmPassengers();
+      if (returnTo === "payment") router.back();
+      else router.push("/payment");
+    } catch (cause) {
+      setApiError(
+        cause instanceof Error
+          ? cause.message
+          : "Không thể xác nhận hành khách.",
+      );
+    } finally {
+      locked.current = false;
+      setPending(false);
+    }
   };
   return (
     <Screen
@@ -46,12 +62,14 @@ export default function TravellerScreen() {
         <ActionBar
           title={returnTo ? "Lưu thông tin" : "Xác nhận"}
           price={returnTo ? b.total : b.fare}
-          disabled={!confirmed}
-          onPress={validate}
+          disabled={!confirmed || pending}
+          loading={pending}
+          onPress={() => void validate()}
         />
       }
     >
       <TripSummary />
+      {!!apiError && <Notice error>{apiError}</Notice>}
       <Label size={17} weight="bold">
         Thông tin hành khách
       </Label>
@@ -215,7 +233,7 @@ export default function TravellerScreen() {
               >
                 <Field
                   half={!stackFields}
-                  label="Quốc tịch"
+                  label="Quốc tịch (mã ISO, ví dụ VN)"
                   value={p.nationality}
                   onChangeText={(value) =>
                     b.updateTraveller(i, { nationality: value })
@@ -254,7 +272,7 @@ export default function TravellerScreen() {
                 />
                 <Field
                   half={!stackFields}
-                  label="Quốc gia cấp"
+                  label="Quốc gia cấp (mã ISO, ví dụ VN)"
                   value={p.issuingCountry}
                   onChangeText={(value) =>
                     b.updateTraveller(i, { issuingCountry: value })

@@ -2,7 +2,31 @@
 
 ## Phạm vi đã nối
 
-Tài khoản (đăng ký, đăng nhập, hồ sơ, đăng xuất) và trang chủ gọi Spring Boot thật. Danh mục khu vực/sân bay và tìm chuyến đã gọi API thật sau lần pull mới. Giữ chỗ, đặt vé, thanh toán và lịch sử vé vẫn chưa có API. Màn kết quả không chuyển chuyến thật vào dịch vụ giữ chỗ mẫu. Booking mô phỏng không được ghi vào MariaDB và không xuất hiện trong mục chuyến sắp tới lấy từ backend.
+Tài khoản, trang chủ, danh mục sân bay và tìm chuyến gọi Spring Boot thật.
+Luồng chọn chuyến → giữ chỗ → báo giá → xác nhận hành khách → review → hành lý →
+tạo đơn cũng đã nối API. Đơn thật dừng ở trạng thái chờ thanh toán; chưa mở QR
+mô phỏng và chưa cấp vé. Lịch sử vé cũ vẫn là dữ liệu mô phỏng, chưa liệt kê đơn thật.
+
+Bộ chọn điểm đến tải toàn bộ danh mục sân bay (có phân trang), bỏ sân bay đang là
+điểm đi. Không gửi `origin` để lọc theo tuyến đang mở bán. Tuyến/ngày không có
+chuyến sẽ trả kết quả rỗng khi tìm kiếm.
+
+### Luồng booking thật trên Expo Go
+
+- Chọn hạng vé yêu cầu đăng nhập. Khứ hồi chọn chuyến đi trước rồi chuyến về.
+- FE đọc giữ chỗ hiện tại trước khi tạo/cập nhật. Giữ nguyên hạn BE, không tự gia hạn.
+  BE chưa có API hủy hold/đổi loại hành trình; nếu hold khác loại hoặc đã gắn đơn,
+  cần chờ hết hạn. Khởi động lại app không xóa hold trên BE.
+- Giá sau khi chọn đủ chuyến lấy từ booking-quotes; review và tổng tiền chốt lấy
+  từ booking-reviews. Màn review tách vé chưa VAT, hành lý chưa VAT, VAT và tổng.
+- Hộ chiếu nhập quốc tịch/quốc gia cấp dạng mã ISO 2 chữ, ví dụ VN, SG, US.
+- Hành lý đọc baggage-options, chỉnh bản nháp trong màn hình, chỉ gửi PUT khi lưu.
+  Thoát không lưu bỏ bản nháp. Xung đột version yêu cầu tải lại và xác nhận, không gửi đè.
+- Tạo đơn gửi reviewId, expectedVersion và Idempotency-Key giữ nguyên khi thử lại
+  cùng review/version. Hiển thị mã đơn, tổng tiền và hạn giữ chỗ sau thành công.
+- BE phải cấu hình khóa mã hóa review và giấy tờ booking như backend/README.md.
+  FE hiển thị lỗi nếu BE thiếu cấu hình; không chuyển sang đặt vé mô phỏng.
+- Các test adapter dùng fetch giả lập, chưa thay thế kiểm thử trên Expo Go với BE thật.
 
 ## Chạy để demo
 
@@ -74,6 +98,6 @@ Typecheck đạt; lint không có lỗi (còn hai warning cũ ở payos-screen).
 - `POST /api/v1/flights/search`: gửi tripType, origin, destination, departureDate, returnDate (chỉ khứ hồi), passengerCounts, direction, page, size. Với chiều về vẫn gửi origin/destination ban đầu, dùng direction RETURN để BE tự đảo tuyến.
 - Danh sách sân bay và chuyến bay trả `{data: [], pagination: {...}}`, khác auth/home chỉ cần bóc data. Client dùng `unwrap: false` để giữ phân trang.
 - Màn kết quả có nút chuyển chiều đi/về và phân trang, hiển thị giờ địa phương từ offset và đúng các hạng vé BE trả về; không tự tạo giá hạng vé thiếu. Giá hiện là một người lớn đã VAT, không phải tổng tiền gia đình.
-- Giữ chỗ thật chưa có API; chọn hạng vé sẽ thông báo chưa thể đặt, không tạo hold giả.
+- Giữ chỗ và tạo đơn đã được nối trong luồng hiện tại; xem phần phạm vi ở đầu tài liệu.
 
 Kiểm tra sau lần nối mới: 6 test API adapter đạt, typecheck đạt, lint chỉ còn 2 warning cũ của PayOS. Bản BE đang chạy ở 8080 trả 401 cho endpoint mới; cần restart BE sau pull. Đã chạy tạm code BE mới ở 8082 và xác nhận regions/airports/search trả 200, CORS đúng; chiều RETURN ngày 26/11/2026 trả HAN → SGN lúc 10:30, Economy 3.564.000đ và Business 8.910.000đ. Các ngày không có lịch trả danh sách rỗng. Bản tạm được tắt sau kiểm tra.

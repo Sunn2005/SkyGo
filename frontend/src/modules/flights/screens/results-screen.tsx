@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef, useLayoutEffect } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import { money } from "@/shared/utils/format";
@@ -19,6 +19,8 @@ export default function ResultsScreen() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const selecting = useRef(false);
+  const [pendingSelection, setPendingSelection] = useState(false);
   const [notice, setNotice] = useState("");
   const [retry, setRetry] = useState(0);
   const activeDirection = search.type === "one-way" ? "OUTBOUND" : direction;
@@ -98,6 +100,66 @@ export default function ResultsScreen() {
       retry,
     ]),
   );
+  const choose = async (
+    flight: Flight,
+    cabin: NonNullable<Flight["cabin"]>,
+    index = activeDirection === "RETURN" ? 1 : 0,
+  ) => {
+    if (selecting.current) return;
+    if (b.accountId === "guest") {
+      b.setPendingFlight({
+        flight: { ...flight, cabin },
+        index,
+        searchKey: JSON.stringify(search),
+      });
+      router.push({
+        pathname: "/login",
+        params: { returnTo: "flight-selection" },
+      });
+      return;
+    }
+    selecting.current = true;
+    setPendingSelection(true);
+    setNotice("");
+    b.setLegIndex(index);
+    try {
+      await b.selectFlight({ ...flight, cabin }, index);
+      if (type === "round-trip" && index === 0 && !b.selected[1]) {
+        setDirection("RETURN");
+        setPage(0);
+        setNotice("Đã giữ chuyến đi. Vui lòng chọn chuyến về.");
+      } else router.push("/traveller");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "Chưa thể giữ chỗ.");
+    } finally {
+      selecting.current = false;
+      setPendingSelection(false);
+    }
+  };
+  const resumeRef = useRef<
+    (intent: typeof b.pendingFlight, accountId: string) => void
+  >(() => {});
+  useLayoutEffect(() => {
+    resumeRef.current = (intent, accountId) => {
+      if (!intent || accountId === "guest" || selecting.current) return;
+      b.setPendingFlight(null);
+      if (intent.searchKey !== JSON.stringify(search)) {
+        setNotice("Tìm kiếm đã thay đổi. Vui lòng chọn lại chuyến bay.");
+        return;
+      }
+      setDirection(intent.index === 1 ? "RETURN" : "OUTBOUND");
+      void choose(
+        intent.flight,
+        intent.flight.cabin ?? search.cabin,
+        intent.index,
+      );
+    };
+  });
+  useFocusEffect(
+    useCallback(() => {
+      resumeRef.current(b.pendingFlight, b.accountId);
+    }, [b.accountId, b.pendingFlight]),
+  );
   const priceFor = (flight: Flight) =>
     search.cabin === "Thương gia"
       ? (flight.businessPrice ?? Infinity)
@@ -158,8 +220,8 @@ export default function ResultsScreen() {
             {total} chuyến từ máy chủ · {results.length} phù hợp trên trang này
           </Label>
           <Notice>
-            Giá một người lớn, một chiều, đã gồm VAT. Chức năng đặt vé sẽ có khi
-            hệ thống hỗ trợ giữ chỗ.
+            Giá một người lớn, một chiều, đã gồm VAT. Tổng tiền theo nhóm hành
+            khách được tính sau khi chọn đủ chuyến.
           </Notice>
           {!!notice && <Notice>{notice}</Notice>}
           {results.map((flight) => (
@@ -181,11 +243,8 @@ export default function ResultsScreen() {
                   <Tap
                     key={cabin}
                     label={`Chọn ${flight.number} ${cabin}`}
-                    onPress={() =>
-                      setNotice(
-                        "Chức năng đặt vé hiện chưa khả dụng. Chưa tạo đơn hoặc giữ chỗ cho chuyến bay này.",
-                      )
-                    }
+                    disabled={pendingSelection}
+                    onPress={() => void choose(flight, cabin)}
                     style={{ flex: 1, paddingVertical: 12 }}
                   >
                     <Label>{cabin}</Label>

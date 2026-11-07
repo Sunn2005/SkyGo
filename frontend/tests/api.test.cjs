@@ -8,9 +8,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skygo-api-"));
 for (const [source, target] of [
   ["shared/api/client", "client"],
   ["modules/account/types", "types"],
+  ["modules/account/utils/login-destination", "login-destination"],
   ["modules/flights/data/airports", "airports"],
   ["modules/flights/services/flight-service", "flights"],
   ["modules/account/data/api-account-service", "account"],
+  ["modules/booking/data/api-booking-service", "booking-api"],
 ]) {
   let text = fs.readFileSync(
     path.join(__dirname, "../src", source + ".ts"),
@@ -243,4 +245,173 @@ test("one way search omits return date and supports empty result pages", async (
     "OUTBOUND",
   );
   assert.deepEqual(result.data, []);
+});
+
+test("destination picker loads international catalog across pages without origin route filter", async () => {
+  const calls = [];
+  global.fetch = async (url) => {
+    const query = new URL(url).searchParams;
+    calls.push(query);
+    assert.equal(query.has("origin"), false);
+    const page = Number(query.get("page"));
+    return new Response(
+      JSON.stringify({
+        data:
+          page === 0
+            ? [
+                { code: "SGN", regionCode: "VN" },
+                { code: "HAN", regionCode: "VN" },
+              ]
+            : [{ code: "SIN", regionCode: "SEA" }],
+        pagination: { page, totalPages: 2 },
+      }),
+    );
+  };
+  const items = await require(path.join(dir, "flights.js")).loadPickerAirports(
+    "",
+    "SGN",
+  );
+  assert.deepEqual(
+    items.map((item) => item.code),
+    ["HAN", "SIN"],
+  );
+  assert.equal(calls.length, 2);
+});
+
+test("real booking adapter sends hold/review/baggage and idempotent creation contracts", async () => {
+  const { bookingApi, quoteRequest, passengerRequest } = require(
+    path.join(dir, "booking-api.js"),
+  );
+  const search = {
+    type: "round-trip",
+    count: 1,
+    children: 1,
+    infants: 1,
+    cabin: "Phổ thông",
+  };
+  const selected = [{ id: "out", cabin: "Thương gia" }, { id: "back" }];
+  const quote = quoteRequest("hold-1", search, selected);
+  assert.equal(quote.tripType, "ROUND_TRIP");
+  assert.deepEqual(quote.selections, [
+    { direction: "OUTBOUND", flightId: "out", cabinClass: "BUSINESS" },
+    { direction: "RETURN", flightId: "back", cabinClass: "ECONOMY" },
+  ]);
+  const passenger = passengerRequest(
+    {
+      kind: "adult",
+      title: "Ông",
+      firstName: " An ",
+      lastName: " Nguyen ",
+      birthDate: "01/02/1990",
+      gender: "Nam",
+      documentType: "passport",
+      documentNumber: " B1234567 ",
+      nationality: "vn",
+      issuingCountry: "vn",
+      documentExpiry: "31/12/2030",
+    },
+    0,
+  );
+  assert.equal(passenger.dateOfBirth, "1990-02-01");
+  assert.equal(passenger.document.expiresOn, "2030-12-31");
+  assert.equal(passenger.document.issuingCountryCode, "VN");
+  assert.equal(passenger.clientPassengerId, "p1");
+  const personalId = passengerRequest(
+    {
+      ...{
+        firstName: "An",
+        lastName: "Nguyen",
+        birthDate: "01/02/1990",
+        gender: "Nam",
+      },
+      documentType: "cccd",
+      documentNumber: "123456789012",
+    },
+    0,
+  );
+  assert.equal(personalId.document.nationalityCountryCode, null);
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({
+      url,
+      ...options,
+      body: options.body ? JSON.parse(options.body) : null,
+    });
+    return new Response(JSON.stringify({ data: { bookingId: "booking-1" } }));
+  };
+  await bookingApi.hold("token", search, selected[0]);
+  await bookingApi.leg("token", "hold-1", search, selected[1], 1);
+  await bookingApi.review("token", {
+    ...quote,
+    passengers: [passenger],
+    contact: { email: "a@example.com", phoneNumber: "0912345678" },
+  });
+  await bookingApi.baggage("token", "review-1", 2, [
+    { clientPassengerId: "p1", direction: "OUTBOUND", extraPieces: 2 },
+  ]);
+  await bookingApi.create(
+    "token",
+    { reviewId: "review-1", version: 3 },
+    "stable-retry-key",
+  );
+  await bookingApi.create(
+    "token",
+    { reviewId: "review-1", version: 3 },
+    "stable-retry-key",
+  );
+  assert.ok(
+    calls.every((call) => call.headers.Authorization === "Bearer token"),
+  );
+  assert.equal(calls[0].body.selection.direction, "OUTBOUND");
+  assert.ok(calls[1].url.endsWith("/legs/RETURN"));
+  assert.equal(calls[1].method, "PUT");
+  assert.equal(calls[3].body.expectedVersion, 2);
+  assert.deepEqual(calls[4].body, { reviewId: "review-1", expectedVersion: 3 });
+  assert.equal(
+    calls[4].headers["Idempotency-Key"],
+    calls[5].headers["Idempotency-Key"],
+  );
+  assert.ok(calls.every((call) => !call.url.includes("payos")));
+});
+
+test("login resumes flight selection and accepts existing result return paths", () => {
+  const { loginDestination } = require(path.join(dir, "login-destination.js"));
+  for (const value of ["results", "/results"])
+    assert.equal(loginDestination(value).href, "/results");
+  for (const value of ["flight-selection", "/flight-selection", "detail"])
+    assert.deepEqual(loginDestination(value), {
+      href: "/results",
+      resumeFlight: true,
+    });
+  for (const value of [
+    undefined,
+    "https://example.com",
+    "//example.com",
+    "unknown",
+  ])
+    assert.deepEqual(loginDestination(value), {
+      href: "/",
+      resumeFlight: false,
+    });
+});
+
+test("review configuration failure stays an API error and never becomes a mock review", async () => {
+  const { bookingApi } = require(path.join(dir, "booking-api.js"));
+  const { ApiError } = require(path.join(dir, "client.js"));
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "REVIEW_ENCRYPTION_UNAVAILABLE",
+          message: "Backend chưa được cấu hình khóa mã hóa review hợp lệ.",
+        },
+      }),
+      { status: 503 },
+    );
+  await assert.rejects(bookingApi.review("token", {}), (error) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 503);
+    assert.equal(error.code, "REVIEW_ENCRYPTION_UNAVAILABLE");
+    return true;
+  });
 });

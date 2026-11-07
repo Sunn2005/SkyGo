@@ -55,6 +55,20 @@ export async function loadAirports(
   rememberAirports(result.data);
   return result;
 }
+// Both pickers use the full catalog; route availability belongs to flight search.
+export async function loadPickerAirports(
+  keyword: string,
+  excludedCode?: string,
+  signal?: AbortSignal,
+) {
+  const all: ApiAirport[] = [];
+  let page = 0;
+  while (true) {
+    const result = await loadAirports({ keyword, page }, signal);
+    all.push(...result.data.filter((item) => item.code !== excludedCode));
+    if (++page >= result.pagination.totalPages) return all;
+  }
+}
 export function mapFlight(item: ApiFlight): Flight {
   const economy = item.fares.find((fare) => fare.cabinClass === "ECONOMY");
   const business = item.fares.find((fare) => fare.cabinClass === "BUSINESS");

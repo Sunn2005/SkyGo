@@ -1,3 +1,4 @@
+import LiveBaggageScreen from "./live-baggage-screen";
 import { useState } from "react";
 import { Modal, View } from "react-native";
 import { Redirect, router } from "expo-router";
@@ -13,6 +14,7 @@ import { colors as c } from "@/shared/theme";
 export default function BaggageScreen() {
   const b = useBooking();
   const [info, setInfo] = useState(false);
+  if (b.isLive) return <LiveBaggageScreen key={b.review?.reviewId} />;
   if (b.selected.length !== b.legs.length) return <Redirect href="/search" />;
   return (
     <Screen

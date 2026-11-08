@@ -304,10 +304,21 @@ hoặc object như sau (giá trị chỉ minh họa):
       "departureAt": "2026-11-18T10:30:00+07:00",
       "arrivalAt": "2026-11-18T12:35:00+07:00"
     }],
-    "bookingId": null
+    "bookingId": null,
+    "version": 1
   }
 }
 ```
+
+Tất cả response tạo/đọc/sửa hold bổ sung `version` (số nguyên, bắt đầu từ 1).
+Đổi toàn bộ lựa chọn: `PUT /api/v1/seat-holds/{seatHoldId}/selection`, gửi
+`expectedVersion`, `tripType`, `passengerCounts` và `selections` đầy đủ. Đổi nguyên tử
+trên cùng hold và giữ hạn cũ; thất bại không làm mất lựa chọn còn hạn. Version tăng
+đúng 1 khi có thay đổi, kể cả qua API sửa từng chiều/số khách; gửi lại nội dung
+không đổi với version hiện tại giữ nguyên review và version. Version cũ trả 409
+`SEAT_HOLD_VERSION_CONFLICT`; GET current rồi để người dùng xác nhận lại.
+Chi tiết, mẫu request/response và Postman: [API đổi lựa chọn](../docs/api/seat-hold-selection.md).
+Schema bổ sung bằng Flyway V9; giữ nguyên V1–V8 đã áp dụng.
 
 Tạo/sửa hold cũng trả schema này. UI dùng thời hạn để đếm ngược và thông tin chiều
 bay để khôi phục màn hình; server vẫn là nơi quyết định hold còn hiệu lực.
@@ -368,6 +379,7 @@ Các mã lỗi:
 | 422 | VALIDATION_ERROR | Sửa đầu vào |
 | 404 | SEAT_HOLD_NOT_FOUND / BOOKING_NOT_FOUND | Không tìm thấy hoặc không thuộc tài khoản |
 | 409 | ACTIVE_HOLD_EXISTS | Đọc GET current; error.activeSeatHoldId và error.bookingId chỉ lượt đang giữ |
+| 409 | SEAT_HOLD_VERSION_CONFLICT | GET current và xác nhận lại lựa chọn với version hiện tại |
 | 409 | INSUFFICIENT_CAPACITY | Không đủ ghế, chọn chuyến/hạng khác |
 | 409 | FLIGHT_UNAVAILABLE | Chuyến/hạng không còn bán hoặc đã khởi hành |
 | 409 | SEAT_HOLD_EXPIRED | Chọn lại chuyến; ghế hết hạn đã được trả |

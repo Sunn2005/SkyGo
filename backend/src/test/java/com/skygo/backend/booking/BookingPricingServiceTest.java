@@ -51,7 +51,7 @@ class BookingPricingServiceTest {
     when(repository.siblings(1)).thenReturn(List.of(new Sibling("ECONOMY",1,100,new BigDecimal("1"))));
     assertEquals("PRICING_UNAVAILABLE",assertThrows(BookingException.class,()->service.calculate(hold())).code);
   }
-  SeatHold hold() { return new SeatHold(1,"h",1,null,TripType.ONE_WAY,1,1,1,"ACTIVE",now,now.plusSeconds(900),List.of(new SeatHold.Leg(Direction.OUTBOUND,1,2))); }
+  SeatHold hold() { return new SeatHold(1,"h",1,null,TripType.ONE_WAY,1,1,1,"ACTIVE",1,now,now.plusSeconds(900),List.of(new SeatHold.Leg(Direction.OUTBOUND,1,2))); }
   void configure(String from,String to) {
     var o=new Airport("AAA","A","A",from,"UTC"); var d=new Airport("BBB","B","B",to,"UTC");
     when(repository.allCabinIds(anyList())).thenReturn(List.of(1L));

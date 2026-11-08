@@ -24,6 +24,11 @@ public class SeatHoldController {
       @Valid @RequestBody SeatHoldCreateRequest request) {
     return new DataResponse<>(service.create(session.user().id(), request));
   }
+  @PutMapping("/{seatHoldId}/selection")
+  public DataResponse<SeatHoldResponse> selection(@AuthenticationPrincipal AuthSession session,
+      @PathVariable String seatHoldId, @Valid @RequestBody SeatHoldSelectionRequest request) {
+    return new DataResponse<>(service.selection(session.user().id(), seatHoldId, request));
+  }
   @PutMapping("/{seatHoldId}/legs/{direction}")
   public DataResponse<SeatHoldResponse> leg(@AuthenticationPrincipal AuthSession session,
       @PathVariable String seatHoldId, @PathVariable String direction,

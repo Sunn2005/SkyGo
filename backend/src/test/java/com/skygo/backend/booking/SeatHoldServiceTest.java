@@ -15,7 +15,7 @@ class SeatHoldServiceTest {
   @Test
   void deadlineIsExclusiveAndInfantsDoNotConsumeSeats() {
     Instant start=Instant.parse("2030-01-01T00:00:00Z");
-    var hold=new SeatHold(1,"h",1,null,TripType.ONE_WAY,1,2,5,"ACTIVE",start,start.plusSeconds(900),List.of());
+    var hold=new SeatHold(1,"h",1,null,TripType.ONE_WAY,1,2,5,"ACTIVE",1,start,start.plusSeconds(900),List.of());
     assertEquals(3,hold.seats());
     assertFalse(hold.expired(start.plusSeconds(899)));
     assertTrue(hold.expired(start.plusSeconds(900)));

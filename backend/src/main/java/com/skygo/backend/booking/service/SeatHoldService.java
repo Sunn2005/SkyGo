@@ -78,6 +78,67 @@ public class SeatHoldService {
     });
   }
 
+  public SeatHoldResponse selection(long user, String holdId, SeatHoldSelectionRequest request) {
+    var requested = new EnumMap<Direction, SeatHoldCreateRequest.Selection>(Direction.class);
+    for (var leg : request.selections()) {
+      if (requested.put(leg.direction(), leg) != null)
+        throw BookingException.invalid("selections", "Mỗi chiều bay chỉ được chọn một lần.");
+    }
+    if (!requested.containsKey(Direction.OUTBOUND))
+      throw BookingException.invalid("selections", "Chưa chọn chiều đi.");
+    if (request.tripType() == TripType.ONE_WAY && requested.containsKey(Direction.RETURN))
+      throw BookingException.invalid("selections", "Hành trình một chiều không có chiều về.");
+    try { return withUser(user, () -> {
+      var hold = editable(user, holdId);
+      if (hold.version() != request.expectedVersion()) throw versionConflict();
+      var proposed = new EnumMap<Direction, Fare>(Direction.class);
+      for (var leg : requested.values()) proposed.put(leg.direction(), selected(leg.flightId(), leg.cabinClass()));
+      var ids = new TreeSet<Long>();
+      hold.legs().forEach(leg -> ids.add(leg.fareId()));
+      proposed.values().forEach(fare -> ids.add(fare.id()));
+      inventory.lock(ids);
+      if (expiry.expireLocked(hold)) return Outcome.failed(expired());
+
+      var count = request.passengerCounts();
+      boolean unchanged = hold.tripType() == request.tripType() && hold.adults() == count.adults()
+          && hold.children() == count.children() && hold.infants() == count.infants()
+          && hold.legs().size() == proposed.size()
+          && hold.legs().stream().allMatch(leg -> proposed.containsKey(leg.direction())
+              && proposed.get(leg.direction()).id() == leg.fareId());
+      if (unchanged) return Outcome.ok(response(hold));
+
+      // Stabilize catalog metadata after locking the complete inventory set in ascending order.
+      var checked = new HashMap<Long, Fare>();
+      for (long id : proposed.values().stream().map(Fare::id).distinct().sorted().toList())
+        checked.put(id, inventory.reservationFare(id));
+      if (expiry.expireLocked(hold)) return Outcome.failed(expired());
+      proposed.replaceAll((direction, fare) -> checked.get(fare.id()));
+      validatePair(proposed);
+      var checkedAt = now();
+      proposed.values().forEach(fare -> inventory.requireAvailable(fare, checkedAt));
+
+      // Reuse seats already held on an unchanged fare, even when available_seats is zero.
+      var deltas = new TreeMap<Long, Long>();
+      hold.legs().forEach(leg -> deltas.merge(leg.fareId(), -leg.reservedSeats(), Long::sum));
+      proposed.values().forEach(fare -> deltas.merge(fare.id(), count.seats(), Long::sum));
+      for (var delta : deltas.entrySet()) {
+        if (delta.getValue() < 0) inventory.release(delta.getKey(), -delta.getValue());
+        else if (delta.getValue() > 0) inventory.reserve(delta.getKey(), delta.getValue());
+      }
+      var legs = proposed.entrySet().stream()
+          .map(entry -> new Leg(entry.getKey(), entry.getValue().id(), count.seats())).toList();
+      holds.selection(hold.id(), request.tripType(), count.adults(), count.children(), count.infants(), legs);
+      holds.invalidateReviews(hold.id(), now());
+      // A deadline reached during writes must roll back replacement before expiring the old selection.
+      if (hold.expired(now())) throw expired();
+      if (!holds.advanceVersion(hold.id(), request.expectedVersion())) throw versionConflict();
+      return Outcome.ok(response(holds.byId(hold.id()).orElseThrow()));
+    }); } catch (BookingException ex) {
+      if (ex.code.equals("SEAT_HOLD_EXPIRED")) expiry.expireDue();
+      throw ex;
+    }
+  }
+
   public SeatHoldResponse leg(long user, String holdId, String directionValue, SeatHoldLegRequest request) {
     final Direction direction;
     try { direction = Direction.valueOf(directionValue); }
@@ -103,6 +164,7 @@ public class SeatHoldService {
       if (old.isPresent()) inventory.release(old.get().fareId(), old.get().reservedSeats());
       inventory.reserve(selection.id(), hold.seats());
       holds.leg(hold.id(), direction, selection.id(), hold.seats());
+      if (!holds.advanceVersion(hold.id(), hold.version())) throw versionConflict();
       holds.invalidateReviews(hold.id(), now());
       return Outcome.ok(response(holds.byId(hold.id()).orElseThrow()));
     });
@@ -130,6 +192,7 @@ public class SeatHoldService {
         holds.leg(hold.id(), leg.direction(), leg.fareId(), request.seats());
       }
       holds.counts(hold.id(), request.adults(), request.children(), request.infants());
+      if (!holds.advanceVersion(hold.id(), hold.version())) throw versionConflict();
       holds.invalidateReviews(hold.id(), now());
       return Outcome.ok(response(holds.byId(hold.id()).orElseThrow()));
     });
@@ -159,6 +222,9 @@ public class SeatHoldService {
         null, h.publicId(), bookings.publicId(h.bookingId()));
   }
   static BookingException expired() { return new BookingException(409, "SEAT_HOLD_EXPIRED", "Lượt giữ chỗ đã hết hiệu lực. Vui lòng chọn lại chuyến bay."); }
+  static BookingException versionConflict() {
+    return new BookingException(409, "SEAT_HOLD_VERSION_CONFLICT", "Lựa chọn đã thay đổi. Vui lòng tải lại lượt giữ chỗ hiện tại.");
+  }
   Instant now() { return clock.instant().truncatedTo(ChronoUnit.MICROS); }
 
   private SeatHoldResponse response(SeatHold h) {
@@ -171,6 +237,6 @@ public class SeatHoldService {
           f.arrival().atZone(ZoneId.of(f.destinationZone())).toOffsetDateTime());
     }).toList();
     return new SeatHoldResponse(h.publicId(), h.status(), h.tripType().name(),
-        new PassengerCountsRequest(h.adults(), h.children(), h.infants()), h.expiresAt(), legs, bookings.publicId(h.bookingId()));
+        new PassengerCountsRequest(h.adults(), h.children(), h.infants()), h.expiresAt(), legs, bookings.publicId(h.bookingId()), h.version());
   }
 }

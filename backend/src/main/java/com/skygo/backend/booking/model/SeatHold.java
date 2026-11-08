@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.List;
 
 public record SeatHold(long id, String publicId, long userId, Long bookingId,
-    TripType tripType, int adults, int children, int infants, String status,
+    TripType tripType, int adults, int children, int infants, String status, long version,
     Instant startedAt, Instant expiresAt, List<Leg> legs) {
   public enum TripType { ONE_WAY, ROUND_TRIP }
   public enum Direction { OUTBOUND, RETURN }

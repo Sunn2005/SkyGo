@@ -33,7 +33,7 @@ public class SeatHoldRepository {
     var holds = jdbc.query(sql, (rs, n) -> new SeatHold(rs.getLong("id"), rs.getString("public_id"),
         rs.getLong("user_id"), rs.getObject("booking_id", Long.class),
         TripType.valueOf(rs.getString("trip_type")), rs.getInt("adults"), rs.getInt("children"),
-        rs.getInt("infants"), rs.getString("status"), instant(rs, "started_at_utc"),
+        rs.getInt("infants"), rs.getString("status"), rs.getLong("hold_version"), instant(rs, "started_at_utc"),
         instant(rs, "expires_at_utc"), List.of()), args);
     if (holds.isEmpty()) return Optional.empty();
     var h = holds.getFirst();
@@ -41,7 +41,7 @@ public class SeatHoldRepository {
         (rs, n) -> new Leg(Direction.valueOf(rs.getString("direction")),
             rs.getLong("flight_fare_id"), rs.getLong("reserved_seats")), h.id());
     return Optional.of(new SeatHold(h.id(), h.publicId(), h.userId(), h.bookingId(), h.tripType(),
-        h.adults(), h.children(), h.infants(), h.status(), h.startedAt(), h.expiresAt(), legs));
+        h.adults(), h.children(), h.infants(), h.status(), h.version(), h.startedAt(), h.expiresAt(), legs));
   }
   public SeatHold create(long user, Long booking, TripType type, int adults, int children, int infants, Instant now) {
     String id = UUID.randomUUID().toString();
@@ -61,6 +61,20 @@ public class SeatHoldRepository {
   public void counts(long hold, int adults, int children, int infants) {
     jdbc.update("UPDATE seat_hold SET adults=?,children=?,infants=?,updated_at_utc=UTC_TIMESTAMP(6) WHERE id=?",
         adults, children, infants, hold);
+  }
+  public boolean advanceVersion(long hold, long expectedVersion) {
+    return jdbc.update("""
+        UPDATE seat_hold SET hold_version=hold_version+1,updated_at_utc=UTC_TIMESTAMP(6)
+        WHERE id=? AND hold_version=? AND status='ACTIVE' AND booking_id IS NULL
+        """, hold, expectedVersion) == 1;
+  }
+  public void selection(long hold, TripType type, int adults, int children, int infants, List<Leg> legs) {
+    jdbc.update("""
+        UPDATE seat_hold SET trip_type=?,adults=?,children=?,infants=?,updated_at_utc=UTC_TIMESTAMP(6)
+        WHERE id=?
+        """, type.name(), adults, children, infants, hold);
+    jdbc.update("DELETE FROM seat_hold_leg WHERE seat_hold_id=?", hold);
+    for (var leg : legs) leg(hold, leg.direction(), leg.fareId(), leg.reservedSeats());
   }
   public void invalidateReviews(long hold, Instant now) {
     jdbc.update("""

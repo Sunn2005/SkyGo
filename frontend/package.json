@@ -17,6 +17,7 @@
     "expo-router": "~58.0.26",
     "expo-sqlite": "~58.0.15",
     "expo-status-bar": "~58.0.4",
+    "qrcode-generator": "^2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
@@ -40,7 +41,8 @@
     "typecheck": "tsc --noEmit",
     "test:account": "node --test tests/account.test.cjs",
     "test:booking": "node --test tests/booking.test.cjs",
-    "test:api": "node --test tests/api.test.cjs"
+    "test:api": "node --test tests/api.test.cjs",
+    "test:payment": "node --test tests/payment.test.cjs"
   },
   "private": true
 }

@@ -4,8 +4,10 @@
 
 Tài khoản, trang chủ, danh mục sân bay và tìm chuyến gọi Spring Boot thật.
 Luồng chọn chuyến → giữ chỗ → báo giá → xác nhận hành khách → review → hành lý →
-tạo đơn cũng đã nối API. Đơn thật dừng ở trạng thái chờ thanh toán; chưa mở QR
-mô phỏng và chưa cấp vé. Lịch sử vé cũ vẫn là dữ liệu mô phỏng, chưa liệt kê đơn thật.
+tạo đơn → thanh toán PayOS → trạng thái → vé/chi tiết đơn đã nối API.
+Lịch sử hiển thị các ID đơn đã tạo hoặc mở trên thiết bị theo tài khoản, lấy chi tiết
+và trạng thái thật từ BE; chưa đồng bộ toàn bộ lịch sử trên thiết bị khác vì chưa có
+API danh sách đơn. Không lưu payload hành khách, QR hoặc token vào danh sách ID này.
 
 Bộ chọn điểm đến tải toàn bộ danh mục sân bay (có phân trang), bỏ sân bay đang là
 điểm đi. Không gửi `origin` để lọc theo tuyến đang mở bán. Tuyến/ngày không có
@@ -27,6 +29,33 @@ chuyến sẽ trả kết quả rỗng khi tìm kiếm.
 - BE phải cấu hình khóa mã hóa review và giấy tờ booking như backend/README.md.
   FE hiển thị lỗi nếu BE thiếu cấu hình; không chuyển sang đặt vé mô phỏng.
 - Các test adapter dùng fetch giả lập, chưa thay thế kiểm thử trên Expo Go với BE thật.
+
+### Thanh toán PayOS
+
+- Sau POST bookings, mở màn QR và GET `/api/v1/bookings/{bookingId}` để đọc trạng thái.
+  Đơn còn được thanh toán mới gọi POST `.../payment-link`, không gửi số tiền từ FE.
+- QR được tạo cục bộ từ chuỗi VietQR của BE bằng thư viện JavaScript `qrcode-generator`,
+  dùng được trong Expo Go. Web tải ảnh GIF; native chia sẻ link hoặc mở checkoutUrl.
+- Poll GET chi tiết mỗi 5 giây sau request trước, dừng khi rời màn hình/chạy nền,
+  đã thanh toán, hết hạn hoặc cần đối soát. Quay lại app đọc lại trạng thái.
+- Chỉ mở màn thành công khi bookingStatus PAID và payment.status SUCCEEDED.
+  Nút kiểm tra/URL chuyển hướng không tự xác nhận thanh toán. FE không gọi webhook.
+- Đồng hồ dùng serverTime + thời gian đã trôi qua, ẩn QR khi hết hạn hoặc link
+  không khớp booking/hold/payment/tổng tiền/tiền tệ. Không dùng QR mô phỏng cho đơn thật.
+- Tiếp tục đơn gọi POST `.../open-for-payment`, rồi đọc chi tiết và lấy link. BE
+  có thể từ chối giữ chỗ lại do thiếu ghế, giao dịch chưa xác minh hoặc cần đối soát.
+- PAYOS_NOT_CONFIGURED hiển thị lỗi cấu hình; PAYMENT_LINK_UNVERIFIED /
+  PAYMENT_STATUS_UNVERIFIED / PAYMENT_RECONCILIATION_REQUIRED không tạo lại link tự động.
+  BE cần đủ cấu hình PayOS, return/cancel URL và webhook truy cập được.
+- Chi tiết/vé lấy từ snapshot BE, giấy tờ đã che. Hiển thị số vé và invoiceId
+  khi đã được cấp, quyền lợi hành lý theo từng người/chiều; không giả định trọng lượng
+  mà GET booking không trả về. Lịch sử chỉ lưu tối đa 30 ID gần đây của từng tài khoản.
+
+Kiểm tra tích hợp 07/11/2026: typecheck, lint và 42 test đạt; Expo export web/iOS/
+Android đạt. Browser QA với API giả lập đã đi qua guest chọn vé → đăng nhập → hành
+khách → review → tạo đơn → QR → cập nhật PAID/SUCCEEDED → số vé/hóa đơn. Reload,
+đăng nhập lại và mở đơn từ lịch sử hoạt động. Chưa thực hiện giao dịch ngân hàng
+hoặc xác minh webhook PayOS thật trên môi trường của người dùng.
 
 ## Chạy để demo
 

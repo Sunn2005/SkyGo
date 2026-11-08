@@ -13,6 +13,7 @@ export function ReservationNotice() {
     !b.warningDismissed;
   const visible = Boolean(
     b.reservation &&
+    !b.livePayment &&
     (expired || warning) &&
     !["/login", "/register"].includes(path),
   );

@@ -1,3 +1,4 @@
+import LiveBookingScreen from "./live-booking-screen";
 import { Redirect, router } from "expo-router";
 import { View } from "react-native";
 import { useBooking } from "@/modules/booking/context/booking-context";
@@ -16,6 +17,7 @@ import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
 export default function BookingScreen() {
   const b = useBooking();
+  if (b.livePayment) return <LiveBookingScreen />;
   const booking = b.currentBooking;
   if (!booking) return <Redirect href="/bookings" />;
   const r = booking.receipt;

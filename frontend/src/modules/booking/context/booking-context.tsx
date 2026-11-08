@@ -1,3 +1,5 @@
+import { rememberBookingId } from "@/modules/payment/services/known-bookings";
+import type { BookingDetail } from "@/modules/payment/services/payment-service";
 import { useAccount } from "@/modules/account/context/account-context";
 import { ApiError } from "@/shared/api/client";
 import {
@@ -52,6 +54,12 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
   const [createdBooking, setCreatedBooking] = useState<CreatedBooking | null>(
     null,
   );
+  const [livePayment, setLivePayment] = useState<{
+    token: string;
+    id: string;
+    detail: BookingDetail | null;
+    receivedAt: number;
+  } | null>(null);
   const [quotedTotal, setQuotedTotal] = useState<number | null>(null);
   const liveBusy = useRef(false);
   const ownerRef = useRef(accountId);
@@ -210,6 +218,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     }
     setReview(null);
     setCreatedBooking(null);
+    setLivePayment(null);
     setQuotedTotal(null);
     setPassengersConfirmed(false);
     setCurrentBooking(null);
@@ -410,6 +419,13 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
         );
         checkSession();
         setCreatedBooking(data);
+        rememberBookingId(accountId, data.bookingId, localStorage);
+        setLivePayment({
+          token: requireToken(),
+          id: data.bookingId,
+          detail: null,
+          receivedAt: Date.now(),
+        });
         return data;
       } catch (error) {
         if (
@@ -515,6 +531,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     );
   };
   const startSearch = () => {
+    setLivePayment(null);
     setPendingFlight(null);
     releaseHold();
     setReview(null);
@@ -556,6 +573,24 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     });
   };
   return {
+    livePayment: livePayment?.token === token ? livePayment : null,
+    selectPaymentBooking: (id: string) => {
+      const accessToken = requireToken();
+      setLivePayment((current) =>
+        current?.id === id && current.token === accessToken
+          ? current
+          : { token: accessToken, id, detail: null, receivedAt: Date.now() },
+      );
+    },
+    acceptPaymentDetail: (detail: BookingDetail) => {
+      checkSession();
+      rememberBookingId(accountId, detail.bookingId, localStorage);
+      setLivePayment((current) =>
+        current?.id === detail.bookingId && current.token === token
+          ? { ...current, detail, receivedAt: Date.now() }
+          : current,
+      );
+    },
     isLive,
     review,
     createdBooking,

@@ -1,3 +1,4 @@
+import LiveBookingScreen from "./live-booking-screen";
 import { View } from "react-native";
 import { Image } from "expo-image";
 import { Redirect, router } from "expo-router";
@@ -11,7 +12,9 @@ import { Screen } from "@/shared/components/screen";
 import { colors as c, radius, space } from "@/shared/theme";
 
 export default function SuccessScreen() {
-  const { receipt } = useBooking();
+  const b = useBooking();
+  const { receipt } = b;
+  if (b.livePayment) return <LiveBookingScreen success />;
   if (!receipt) return <Redirect href="/" />;
   return (
     <Screen

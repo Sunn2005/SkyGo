@@ -28,26 +28,23 @@ export default function PaymentScreen() {
   const locked = useRef(false);
   if (b.createdBooking)
     return (
-      <Screen design title="Đã tạo đơn đặt vé">
+      <Screen design title="Đơn đặt vé">
         <Panel>
-          <Label size={22} weight="bold">
-            {b.createdBooking.bookingCode}
-          </Label>
-          <InfoRow label="Trạng thái" value="Chờ thanh toán" />
-          <InfoRow
-            label="Tổng tiền"
-            value={money(b.createdBooking.totalAmount)}
-          />
+          <Label weight="bold">{b.createdBooking.bookingCode}</Label>
+          <Label>{money(b.createdBooking.totalAmount)}</Label>
           <Label>
-            Hạn giữ chỗ:{" "}
-            {new Date(b.createdBooking.holdExpiresAt).toLocaleString("vi-VN")}
+            Đơn đã được tạo. Tiếp tục để kiểm tra trạng thái và thanh toán.
           </Label>
-          <Notice>
-            Đơn đã được lưu trên hệ thống. Thanh toán PayOS chưa khả dụng; vé
-            chưa được cấp. Chỗ sẽ được trả lại khi hết hạn.
-          </Notice>
         </Panel>
-        <Button title="Về trang chủ" onPress={() => router.replace("/")} />
+        <Button
+          title="Tiếp tục thanh toán"
+          onPress={() => router.replace("/payos")}
+        />
+        <Button
+          secondary
+          title="Xem chi tiết đơn"
+          onPress={() => router.replace("/booking")}
+        />
       </Screen>
     );
   if (b.selected.length !== b.legs.length) return <Redirect href="/" />;
@@ -68,7 +65,7 @@ export default function PaymentScreen() {
     setError("");
     try {
       await b.checkout();
-      if (!b.isLive) router.push("/payos");
+      router.push("/payos");
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -96,7 +93,7 @@ export default function PaymentScreen() {
       step={2}
       footer={
         <ActionBar
-          title={b.isLive ? "Tạo đơn đặt vé" : "Tiếp tục thanh toán"}
+          title="Tiếp tục thanh toán"
           price={b.total}
           loading={pending}
           disabled={!b.passengersConfirmed || pending}

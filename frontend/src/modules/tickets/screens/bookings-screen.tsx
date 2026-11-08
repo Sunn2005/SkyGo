@@ -1,89 +1,118 @@
-import { useRef, useState } from "react";
-import { router } from "expo-router";
+import { useCallback, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
+import { useAccount } from "@/modules/account/context/account-context";
+import {
+  paymentApi,
+  type BookingDetail,
+} from "@/modules/payment/services/payment-service";
+import { knownBookingIds } from "@/modules/payment/services/known-bookings";
+import {
+  holdExpired,
+  isBookingPaid,
+  needsReconciliation,
+} from "@/modules/payment/services/payment-state";
 import { money } from "@/shared/utils/format";
 import { Button, Card, Label, Notice, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 export default function BookingsScreen() {
   const b = useBooking();
+  const { session } = useAccount();
+  const token = session?.accessToken;
+  const owner = b.accountId;
+  const [items, setItems] = useState<
+    { data: BookingDetail; receivedAt: number }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
-  const open = async (id: string) => {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      await b.openBooking(id);
-      router.push("/booking");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Chưa thể mở đặt chỗ.");
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
-  };
+  const [retry, setRetry] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      void retry;
+      if (!token) return;
+      const controller = new AbortController();
+      const ids = knownBookingIds(owner, localStorage);
+      setLoading(true);
+      setError("");
+      setItems([]);
+      void Promise.allSettled(
+        ids.map(async (id) => ({
+          data: await paymentApi.detail(token, id, controller.signal),
+          receivedAt: Date.now(),
+        })),
+      )
+        .then((results) => {
+          if (controller.signal.aborted) return;
+          setItems(
+            results
+              .flatMap((result) =>
+                result.status === "fulfilled" ? [result.value] : [],
+              )
+              .sort(
+                (a, b) =>
+                  Date.parse(b.data.createdAt) - Date.parse(a.data.createdAt),
+              ),
+          );
+          if (results.some((result) => result.status === "rejected"))
+            setError("Một số đơn chưa tải được. Vui lòng thử lại.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+      return () => controller.abort();
+    }, [token, owner, retry]),
+  );
   return (
     <Screen title="Lịch sử đặt chỗ">
       <Label size={26} weight="bold">
         Hành trình của bạn
       </Label>
-      {b.historyLoading && <Label>Đang tải đặt chỗ…</Label>}
-      {!!b.historyError && (
+      <Label size={12} muted>
+        Các đơn đã tạo hoặc mở trên thiết bị này. Trạng thái và vé được cập nhật
+        từ hệ thống.
+      </Label>
+      {loading && <Notice>Đang tải đặt chỗ…</Notice>}
+      {!!error && (
         <>
-          <Notice error>{b.historyError}</Notice>
-          <Button
-            title="Tải lại đặt chỗ"
-            secondary
-            disabled={b.historyLoading}
-            onPress={() => void b.reloadHistory()}
-          />
+          <Notice error>{error}</Notice>
+          <Button title="Tải lại" onPress={() => setRetry((n) => n + 1)} />
         </>
       )}
-      {!!error && <Notice error>{error}</Notice>}
-      {b.history.map((item) => (
+      {items.map(({ data, receivedAt }) => (
         <Tap
-          key={item.receipt.reference}
-          disabled={busy}
-          onPress={() => void open(item.id)}
+          key={data.bookingId}
+          onPress={() => {
+            b.selectPaymentBooking(data.bookingId);
+            router.push("/booking");
+          }}
         >
           <Card>
-            <Label selectable weight="semibold">
-              {item.receipt.reference}
-            </Label>
+            <Label weight="bold">{data.bookingCode}</Label>
+            {data.legs.map((leg) => (
+              <Label key={leg.direction}>
+                {leg.origin.code} → {leg.destination.code} ·{" "}
+                {leg.departureAt.slice(0, 10)}
+              </Label>
+            ))}
             <Label>
-              {item.receipt.search.from} → {item.receipt.search.to} ·{" "}
-              {item.receipt.search.type === "round-trip"
-                ? "Khứ hồi"
-                : "Một chiều"}
-            </Label>
-            <Label size={13}>
-              {item.receipt.search.date} · {item.receipt.travellers.length}{" "}
-              người
-            </Label>
-            <Label>
-              {item.status === "confirmed"
+              {isBookingPaid(data)
                 ? "Đã thanh toán · Xem vé"
-                : item.payments.at(-1)?.status === "expired"
-                  ? "Hết hạn · Tìm lại chuyến bay"
-                  : "Chờ thanh toán · Tiếp tục"}
+                : needsReconciliation(data)
+                  ? "Cần đối soát"
+                  : holdExpired(data, receivedAt)
+                    ? "Hết hạn giữ chỗ"
+                    : "Chờ thanh toán · Tiếp tục"}
             </Label>
-            <Label weight="bold">{money(item.receipt.total)}</Label>
+            <Label weight="bold">{money(data.price.totalAmount)}</Label>
           </Card>
         </Tap>
       ))}
-      {!b.history.length && !b.historyLoading && (
-        <Label muted>Bạn chưa có đặt chỗ nào trên thiết bị này.</Label>
+      {!loading && !items.length && !error && (
+        <Notice>
+          Chưa có đơn đặt vé được lưu trên thiết bị này cho tài khoản của bạn.
+        </Notice>
       )}
-      <Button
-        title="Tìm chuyến bay"
-        onPress={() => router.replace("/search")}
-      />
-      <Notice>
-        Đặt chỗ mẫu được lưu trên thiết bị theo tài khoản. Dùng thông tin giả
-        khi thử nghiệm.
-      </Notice>
+      <Button title="Tìm chuyến bay" onPress={() => router.push("/search")} />
     </Screen>
   );
 }

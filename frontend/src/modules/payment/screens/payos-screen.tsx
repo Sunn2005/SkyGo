@@ -1,3 +1,4 @@
+import LivePayosScreen from "./live-payos-screen";
 import { Platform, Share, View } from "react-native";
 import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +15,14 @@ import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
 export default function PayosScreen() {
   const b = useBooking();
+  if (b.livePayment)
+    return (
+      <LivePayosScreen key={b.livePayment.id} bookingId={b.livePayment.id} />
+    );
+  return <MockPayosScreen />;
+}
+function MockPayosScreen() {
+  const b = useBooking();
   const [clock, tick] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => tick(Date.now()), 1000);
@@ -21,7 +30,6 @@ export default function PayosScreen() {
   }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [showTools, setShowTools] = useState(false);
   const locked = useRef(false);
   const booking = b.currentBooking;
   const payment = booking?.payments.at(-1);

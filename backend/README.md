@@ -106,6 +106,7 @@ Khi thay schema tiếp, thêm migration mới; giữ nguyên migration đã áp 
 | GET /api/v1/regions | Danh sách nhóm khu vực có sân bay đang hoạt động, không cần đăng nhập |
 | GET /api/v1/airports | Tra cứu sân bay để chọn điểm đi/đến, không cần đăng nhập |
 | POST /api/v1/flights/search | Tìm chuyến một chiều hoặc từng chiều khứ hồi, không cần đăng nhập |
+| POST /api/v1/flights/search/nearby-days | Trang đầu của 7 ngày quanh ngày tìm (±3), tối đa 10 chuyến/ngày và phân trang riêng từng ngày; công khai |
 | POST /api/v1/seat-holds | Giữ chuyến/hạng chiều đi trong 15 phút; cần Bearer token |
 | GET /api/v1/seat-holds/current | Lượt giữ chỗ còn hiệu lực của tài khoản, hoặc data: null |
 | PUT /api/v1/seat-holds/{seatHoldId}/legs/{direction} | Thêm chiều về hoặc đổi chuyến/hạng trước tạo đơn |
@@ -185,6 +186,9 @@ $env:SKYGO_TEST_DB_PASSWORD='your_local_password'
 ```
 
 ### API tìm chuyến bay
+
+API 7 ngày mới: xem [contract tìm chuyến ngày lân cận](../docs/api/nearby-flight-search.md).
+API theo ngày bên dưới giữ nguyên và dùng để tải thêm với `page >= 1`, `size = 10`.
 
 `POST /api/v1/flights/search` là API công khai, nhận JSON. Ví dụ:
 

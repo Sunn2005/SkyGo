@@ -6,6 +6,8 @@ import static org.mockito.Mockito.*;
 
 import com.skygo.backend.flight.contract.FlightSearchRequest;
 import com.skygo.backend.flight.contract.FlightSearchRequest.*;
+import com.skygo.backend.flight.contract.NearbyFlightSearchRequest;
+import com.skygo.backend.flight.contract.NearbyFlightSearchResponse.DisabledReason;
 import com.skygo.backend.flight.exception.FlightSearchException;
 import com.skygo.backend.flight.repository.FlightSearchRepository;
 import com.skygo.backend.flight.repository.FlightSearchRepository.*;
@@ -14,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.*;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -37,6 +40,7 @@ class FlightSearchServiceTest {
     when(repository.activeAirport("BBB")).thenReturn(Optional.of(
         new AirportRow(2, "BBB", "Tokyo", "Asia/Tokyo")));
     when(repository.search(any())).thenReturn(new SearchRows(0, List.of()));
+    when(repository.searchNearby(any())).thenReturn(Map.of());
   }
 
   @Test
@@ -104,5 +108,105 @@ class FlightSearchServiceTest {
     return new FlightSearchRequest(type, "AAA", "BBB", LocalDate.parse(departure),
         returning == null ? null : LocalDate.parse(returning), new PassengerCounts(2, 1, 4),
         direction, null, null);
+  }
+
+  @Test
+  void nearbyReturnsSevenDaysAndUsesOneBatchWithLocalDstBoundaries() {
+    var result = service.nearbyDays(nearby(TripType.ONE_WAY, Direction.OUTBOUND, "2027-03-16", null));
+    assertEquals(LocalDate.parse("2027-03-16"), result.centerDate());
+    assertEquals(LocalDate.parse("2027-03-13"), result.startDate());
+    assertEquals(LocalDate.parse("2027-03-19"), result.endDate());
+    assertEquals(7, result.days().size());
+    assertEquals(result.centerDate(), result.days().get(3).date());
+    for (var day : result.days()) {
+      assertTrue(day.selectable());
+      assertNull(day.disabledReason());
+      assertTrue(day.flights().isEmpty());
+      assertEquals(0, day.pagination().page());
+      assertEquals(10, day.pagination().size());
+      assertEquals(0, day.pagination().totalElements());
+      assertEquals(0, day.pagination().totalPages());
+      assertFalse(day.pagination().hasMore());
+    }
+    var captor = ArgumentCaptor.forClass(NearbyCriteria.class);
+    verify(repository).searchNearby(captor.capture());
+    verify(repository, never()).search(any());
+    verify(expiry).expireDue();
+    assertEquals(3, captor.getValue().requiredSeats());
+    var dstDay = captor.getValue().days().get(1);
+    assertEquals(Instant.parse("2027-03-14T05:00:00Z"), dstDay.start());
+    assertEquals(Instant.parse("2027-03-15T04:00:00Z"), dstDay.end());
+  }
+
+  @Test
+  void nearbyKeepsCabinsAndAdultVatPricesTogetherWithPerDayPagination() {
+    var day = LocalDate.parse("2027-03-16");
+    var departure = Instant.parse("2027-03-16T10:00:00Z");
+    when(repository.searchNearby(any())).thenReturn(Map.of(day, new SearchRows(11, List.of(
+        new FareRow("f1", "SG1", departure, departure.plusSeconds(7200), "ECONOMY",
+            new BigDecimal("105"), new BigDecimal("0.10")),
+        new FareRow("f1", "SG1", departure, departure.plusSeconds(7200), "BUSINESS",
+            new BigDecimal("1000"), new BigDecimal("0.10"))))));
+    var result = service.nearbyDays(nearby(TripType.ONE_WAY, Direction.OUTBOUND, day.toString(), null));
+    var center = result.days().get(3);
+    assertEquals(1, center.flights().size());
+    assertEquals(2, center.flights().getFirst().fares().size());
+    assertEquals(116, center.flights().getFirst().fares().getFirst().price().amount());
+    assertEquals(1100, center.flights().getFirst().fares().getLast().price().amount());
+    assertEquals(11, center.pagination().totalElements());
+    assertEquals(2, center.pagination().totalPages());
+    assertTrue(center.pagination().hasMore());
+    assertEquals(0, result.days().getFirst().pagination().totalElements());
+  }
+
+  @Test
+  void nearbyReturnUsesReturnDateAsCenterAndDisablesDaysBeforeOrOnDeparture() {
+    var result = service.nearbyDays(nearby(TripType.ROUND_TRIP, Direction.RETURN,
+        "2027-03-14", "2027-03-16"));
+    assertEquals(LocalDate.parse("2027-03-16"), result.centerDate());
+    assertEquals(Direction.RETURN, result.direction());
+    assertEquals(DisabledReason.PAST_DATE, result.days().get(0).disabledReason());
+    assertEquals(DisabledReason.RETURN_NOT_AFTER_DEPARTURE, result.days().get(1).disabledReason());
+    assertFalse(result.days().get(1).selectable());
+    assertTrue(result.days().get(2).selectable());
+    var captor = ArgumentCaptor.forClass(NearbyCriteria.class);
+    verify(repository).searchNearby(captor.capture());
+    assertEquals(2, captor.getValue().originId());
+    assertEquals(1, captor.getValue().destinationId());
+    assertEquals(5, captor.getValue().days().size());
+    assertEquals(Instant.parse("2027-03-14T15:00:00Z"), captor.getValue().days().getFirst().start());
+  }
+
+  @Test
+  void nearbyOutboundKeepsSevenTabsAndDisablesDepartureOnOrAfterReturn() {
+    var result = service.nearbyDays(nearby(TripType.ROUND_TRIP, Direction.OUTBOUND,
+        "2027-03-14", "2027-03-16"));
+    assertEquals(7, result.days().size());
+    assertEquals(DisabledReason.PAST_DATE, result.days().getFirst().disabledReason());
+    assertTrue(result.days().get(2).selectable()); // Local March 13, not UTC March 14.
+    assertEquals(DisabledReason.DEPARTURE_NOT_BEFORE_RETURN, result.days().get(5).disabledReason());
+    assertEquals(DisabledReason.DEPARTURE_NOT_BEFORE_RETURN, result.days().get(6).disabledReason());
+    var captor = ArgumentCaptor.forClass(NearbyCriteria.class);
+    verify(repository).searchNearby(captor.capture());
+    assertEquals(3, captor.getValue().days().size());
+  }
+
+  @Test
+  void nearbyRejectsInvalidTripAndUnrepresentableDateWindowBeforeQuerying() {
+    assertThrows(FlightSearchException.class, () -> service.nearbyDays(
+        nearby(TripType.ROUND_TRIP, Direction.RETURN, "2027-03-16", "2027-03-16")));
+    assertThrows(FlightSearchException.class, () -> service.nearbyDays(
+        nearby(TripType.ONE_WAY, Direction.OUTBOUND, "2027-03-12", null)));
+    assertThrows(FlightSearchException.class, () -> service.nearbyDays(
+        nearby(TripType.ONE_WAY, Direction.OUTBOUND, "9999-12-30", null)));
+    assertThrows(FlightSearchException.class, () -> service.nearbyDays(
+        nearby(TripType.ONE_WAY, Direction.OUTBOUND, "+999999999-12-31", null)));
+    verify(repository, never()).searchNearby(any());
+  }
+
+  NearbyFlightSearchRequest nearby(TripType type, Direction direction, String departure, String returning) {
+    var request = request(type, direction, departure, returning);
+    return new NearbyFlightSearchRequest(request.tripType(), request.origin(), request.destination(),
+        request.departureDate(), request.returnDate(), request.passengerCounts(), request.direction());
   }
 }

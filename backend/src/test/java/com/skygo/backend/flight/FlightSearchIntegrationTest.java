@@ -151,6 +151,132 @@ class FlightSearchIntegrationTest {
         """;
   }
 
+  @Test
+  void nearbyPagesTenFlightsPerDayAndSingleDayApiLoadsTheRemainder() throws Exception {
+    for (int day = 0; day < 7; day++) {
+      var departure = LocalDate.of(2027, 1, 11).plusDays(day).atTime(10, 0).minusHours(7);
+      for (int index = 0; index < 12; index++) {
+        long id = flight("nearby-" + day + "-" + String.format("%02d", index),
+            outboundRoute, departure.toString(), "ON_SALE");
+        fare(id, "ECONOMY", 2, true, 105);
+        fare(id, "BUSINESS", 2, true, 1000);
+      }
+    }
+    var response = mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json")
+            .content(request().replace("2027-01-10", "2027-01-14")
+                .replace("\"size\":20", "\"size\":100").replace("\"page\":0", "\"page\":9")))
+        .andExpect(status().isOk()) // Public, no token. Page/size cannot enlarge the batch.
+        .andExpect(jsonPath("$.data.centerDate").value("2027-01-14"))
+        .andExpect(jsonPath("$.data.startDate").value("2027-01-11"))
+        .andExpect(jsonPath("$.data.endDate").value("2027-01-17"))
+        .andExpect(jsonPath("$.data.direction").value("OUTBOUND"))
+        .andExpect(jsonPath("$.data.days.length()").value(7));
+    for (int day = 0; day < 7; day++) {
+      String path = "$.data.days[" + day + "]";
+      response.andExpect(jsonPath(path + ".date").value(LocalDate.of(2027, 1, 11).plusDays(day).toString()))
+          .andExpect(jsonPath(path + ".selectable").value(true))
+          .andExpect(jsonPath(path + ".flights.length()").value(10))
+          .andExpect(jsonPath(path + ".flights[0].flightId").value("nearby-" + day + "-00"))
+          .andExpect(jsonPath(path + ".flights[9].flightId").value("nearby-" + day + "-09"))
+          .andExpect(jsonPath(path + ".flights[0].fares.length()").value(2))
+          .andExpect(jsonPath(path + ".flights[0].fares[0].price.amount").value(116))
+          .andExpect(jsonPath(path + ".pagination.page").value(0))
+          .andExpect(jsonPath(path + ".pagination.size").value(10))
+          .andExpect(jsonPath(path + ".pagination.totalElements").value(12))
+          .andExpect(jsonPath(path + ".pagination.totalPages").value(2))
+          .andExpect(jsonPath(path + ".pagination.hasMore").value(true));
+    }
+    mvc.perform(post("/api/v1/flights/search").contentType("application/json")
+            .content(request().replace("2027-01-10", "2027-01-14")
+                .replace("\"size\":20", "\"size\":10").replace("\"page\":0", "\"page\":1")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].flightId").value("nearby-3-10"))
+        .andExpect(jsonPath("$.data[1].flightId").value("nearby-3-11"))
+        .andExpect(jsonPath("$.data[0].fares.length()").value(2))
+        .andExpect(jsonPath("$.pagination.totalElements").value(12));
+    assertEquals(168, jdbc.queryForObject("SELECT SUM(available_seats) FROM flight_fare "
+        + "WHERE flight_id IN (SELECT id FROM flight WHERE public_id LIKE 'nearby-%') "
+        + "AND cabin_class = 'ECONOMY'", Integer.class));
+  }
+
+  @Test
+  void nearbyUsesLocalBoundariesAndFiltersBeforeCounting() throws Exception {
+    fare(flight("nearby-at-start", outboundRoute, "2027-01-10T17:00:00", "ON_SALE"), "ECONOMY", 2, true, 105);
+    fare(flight("nearby-before-start", outboundRoute, "2027-01-10T16:59:59", "ON_SALE"), "ECONOMY", 2, true, 105);
+    fare(flight("nearby-at-end", outboundRoute, "2027-01-17T17:00:00", "ON_SALE"), "ECONOMY", 2, true, 105);
+    fare(flight("nearby-no-seats", outboundRoute, "2027-01-11T01:00:00", "ON_SALE"), "ECONOMY", 1, true, 105);
+    fare(flight("nearby-closed", outboundRoute, "2027-01-11T02:00:00", "CLOSED"), "ECONOMY", 10, true, 105);
+    fare(flight("nearby-fare-closed", outboundRoute, "2027-01-11T03:00:00", "ON_SALE"), "ECONOMY", 10, false, 105);
+    // Infants do not require seats; business with one seat is omitted from this flight.
+    long valid = jdbc.queryForObject("SELECT id FROM flight WHERE public_id='nearby-at-start'", Long.class);
+    fare(valid, "BUSINESS", 1, true, 1000);
+    mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json")
+            .content(request().replace("2027-01-10", "2027-01-14")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.days[0].flights.length()").value(1))
+        .andExpect(jsonPath("$.data.days[0].flights[0].flightId").value("nearby-at-start"))
+        .andExpect(jsonPath("$.data.days[0].flights[0].departureAt").value("2027-01-11T00:00:00+07:00"))
+        .andExpect(jsonPath("$.data.days[0].flights[0].fares.length()").value(1))
+        .andExpect(jsonPath("$.data.days[0].pagination.totalElements").value(1))
+        .andExpect(jsonPath("$.data.days[0].pagination.hasMore").value(false))
+        .andExpect(jsonPath("$.data.days[6].flights.length()").value(0))
+        .andExpect(jsonPath("$.data.days[6].pagination.totalElements").value(0));
+    jdbc.update("UPDATE air_route SET is_active=0 WHERE id=?", outboundRoute);
+    mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json")
+            .content(request().replace("2027-01-10", "2027-01-14")))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.days[0].pagination.totalElements").value(0));
+  }
+
+  @Test
+  void nearbyReturnCentersOnReturnDateAndKeepsInvalidAndEmptyTabs() throws Exception {
+    fare(flight("nearby-return", returnRoute, "2027-01-11T15:00:00", "ON_SALE"), "BUSINESS", 2, true, 1000);
+    fare(flight("nearby-return-invalid", returnRoute, "2027-01-09T15:00:00", "ON_SALE"), "BUSINESS", 2, true, 1000);
+    String returning = request().replace("ONE_WAY", "ROUND_TRIP").replace("OUTBOUND", "RETURN")
+        .replace("\"returnDate\":null", "\"returnDate\":\"2027-01-12\"");
+    mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json").content(returning))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.centerDate").value("2027-01-12"))
+        .andExpect(jsonPath("$.data.startDate").value("2027-01-09"))
+        .andExpect(jsonPath("$.data.endDate").value("2027-01-15"))
+        .andExpect(jsonPath("$.data.days.length()").value(7))
+        .andExpect(jsonPath("$.data.days[0].disabledReason").value("PAST_DATE"))
+        .andExpect(jsonPath("$.data.days[1].disabledReason").value("RETURN_NOT_AFTER_DEPARTURE"))
+        .andExpect(jsonPath("$.data.days[1].selectable").value(false))
+        .andExpect(jsonPath("$.data.days[1].flights.length()").value(0))
+        .andExpect(jsonPath("$.data.days[1].pagination.totalElements").value(0))
+        .andExpect(jsonPath("$.data.days[2].selectable").value(true))
+        .andExpect(jsonPath("$.data.days[2].flights.length()").value(0))
+        .andExpect(jsonPath("$.data.days[2].pagination.hasMore").value(false))
+        .andExpect(jsonPath("$.data.days[3].flights[0].origin.code").value("ZSB"))
+        .andExpect(jsonPath("$.data.days[3].flights[0].destination.code").value("ZSA"))
+        .andExpect(jsonPath("$.data.days[3].flights[0].departureAt").value("2027-01-12T00:00:00+09:00"));
+  }
+
+  @Test
+  void nearbyValidationIsPublicAndUsesExisting422Contract() throws Exception {
+    for (String invalid : new String[] {"{}", "{",
+        request().replace("\"adults\":2", "\"adults\":0"),
+        request().replace("\"adults\":2", "\"adults\":1.5"),
+        request().replace("\"children\":0", "\"children\":\"0\""),
+        request().replace("\"infants\":3", "\"infants\":null"),
+        request().replace("\"ZSB\"", "\"ZSA\""),
+        request().replace("\"ZSB\"", "\"XXX\""),
+        request().replace("2027-01-10", "2027-01-09"),
+        request().replace("2027-01-10", "2027-02-30"),
+        request().replace("ONE_WAY", "ROUND_TRIP"),
+        request().replace("OUTBOUND", "RETURN")}) {
+      mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json").content(invalid))
+          .andExpect(status().is(422)).andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
+    mvc.perform(post("/api/v1/flights/search/nearby-days").contentType("application/json").content(request()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.days.length()").value(7))
+        .andExpect(jsonPath("$.data.days[0].selectable").value(false))
+        .andExpect(jsonPath("$.data.days[3].selectable").value(true))
+        .andExpect(jsonPath("$.data.days[3].pagination.size").value(10));
+  }
+
   void airport(String code, String zone) {
     jdbc.update("""
         INSERT INTO airport (code,name,city,country_code,country_name,region_code,

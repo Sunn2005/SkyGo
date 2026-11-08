@@ -5,6 +5,9 @@ import com.skygo.backend.flight.contract.FlightSearchRequest.Direction;
 import com.skygo.backend.flight.contract.FlightSearchRequest.TripType;
 import com.skygo.backend.flight.contract.FlightSearchResponse;
 import com.skygo.backend.flight.contract.FlightSearchResponse.*;
+import com.skygo.backend.flight.contract.NearbyFlightSearchRequest;
+import com.skygo.backend.flight.contract.NearbyFlightSearchResponse;
+import com.skygo.backend.flight.contract.NearbyFlightSearchResponse.DisabledReason;
 import com.skygo.backend.flight.exception.FlightSearchException;
 import com.skygo.backend.flight.repository.FlightSearchRepository;
 import com.skygo.backend.flight.repository.FlightSearchRepository.*;
@@ -41,6 +44,74 @@ public class FlightSearchService {
   }
 
   public FlightSearchResponse search(FlightSearchRequest request) {
+    var context = resolve(request);
+    var from = context.from();
+    var to = context.to();
+    var date = context.date();
+    var fromZone = ZoneId.of(from.timeZone());
+    int page = request.page() == null ? 0 : request.page();
+    int size = request.size() == null ? 20 : request.size();
+    expiry.expireDue();
+    var rows = readTransaction.execute(status -> repository.search(new Criteria(from.id(), to.id(),
+        date.atStartOfDay(fromZone).toInstant(), date.plusDays(1).atStartOfDay(fromZone).toInstant(),
+        clock.instant(), (long) request.passengerCounts().adults() + request.passengerCounts().children(), page, size)));
+    return new FlightSearchResponse(flights(rows.fares(), from, to),
+        new Pagination(page, size, rows.total(), (rows.total() + size - 1) / size));
+  }
+
+  public NearbyFlightSearchResponse nearbyDays(NearbyFlightSearchRequest request) {
+    var criteria = request.toSearchRequest();
+    var context = resolve(criteria);
+    var center = context.date();
+    final LocalDate start;
+    final LocalDate end;
+    try {
+      start = center.minusDays(NearbyFlightSearchRequest.DAYS_EACH_SIDE);
+      end = center.plusDays(NearbyFlightSearchRequest.DAYS_EACH_SIDE);
+      // MariaDB DATETIME cannot represent the exclusive upper bound beyond year 9999.
+      if (start.getYear() < 1000 || end.plusDays(1).getYear() > 9999)
+        throw new DateTimeException("Date range outside database bounds");
+    } catch (DateTimeException ex) {
+      throw new FlightSearchException(request.direction() == Direction.RETURN ? "returnDate" : "departureDate",
+          "Khoảng ngày tìm kiếm không được hỗ trợ.");
+    }
+    var zone = ZoneId.of(context.from().timeZone());
+    var dates = start.datesUntil(end.plusDays(1)).toList();
+    expiry.expireDue();
+    var checkedAt = clock.instant();
+    var today = checkedAt.atZone(zone).toLocalDate();
+    var windows = dates.stream().filter(day -> disabledReason(day, criteria, today) == null)
+        .map(day -> new DayWindow(day, day.atStartOfDay(zone).toInstant(),
+            day.plusDays(1).atStartOfDay(zone).toInstant())).toList();
+    var rows = readTransaction.execute(status -> repository.searchNearby(new NearbyCriteria(
+        context.from().id(), context.to().id(), windows, checkedAt,
+        (long) request.passengerCounts().adults() + request.passengerCounts().children())));
+    var days = dates.stream().map(day -> {
+      var reason = disabledReason(day, criteria, today);
+      var found = rows.getOrDefault(day, new SearchRows(0, List.of()));
+      int size = NearbyFlightSearchRequest.PAGE_SIZE;
+      return new NearbyFlightSearchResponse.Day(day, reason == null, reason,
+          flights(found.fares(), context.from(), context.to()),
+          new NearbyFlightSearchResponse.Pagination(0, size, found.total(),
+              (found.total() + size - 1) / size, found.total() > size));
+    }).toList();
+    return new NearbyFlightSearchResponse(center, start, end, request.direction(), days);
+  }
+
+  private DisabledReason disabledReason(LocalDate day, FlightSearchRequest request, LocalDate today) {
+    if (day.isBefore(today)) return DisabledReason.PAST_DATE;
+    if (request.tripType() == TripType.ROUND_TRIP) {
+      if (request.direction() == Direction.RETURN && !day.isAfter(request.departureDate()))
+        return DisabledReason.RETURN_NOT_AFTER_DEPARTURE;
+      if (request.direction() == Direction.OUTBOUND && !day.isBefore(request.returnDate()))
+        return DisabledReason.DEPARTURE_NOT_BEFORE_RETURN;
+    }
+    return null;
+  }
+
+  private record SearchContext(AirportRow from, AirportRow to, LocalDate date) {}
+
+  private SearchContext resolve(FlightSearchRequest request) {
     if (request.origin().equals(request.destination()))
       throw new FlightSearchException("destination", "Điểm đến phải khác điểm đi.");
     var origin = airport(request.origin(), "origin");
@@ -61,17 +132,14 @@ public class FlightSearchService {
     boolean returning = request.direction() == Direction.RETURN;
     var from = returning ? destination : origin;
     var to = returning ? origin : destination;
-    var date = returning ? request.returnDate() : request.departureDate();
+    return new SearchContext(from, to, returning ? request.returnDate() : request.departureDate());
+  }
+
+  private List<Flight> flights(List<FareRow> rows, AirportRow from, AirportRow to) {
     var fromZone = ZoneId.of(from.timeZone());
     var toZone = ZoneId.of(to.timeZone());
-    int page = request.page() == null ? 0 : request.page();
-    int size = request.size() == null ? 20 : request.size();
-    expiry.expireDue();
-    var rows = readTransaction.execute(status -> repository.search(new Criteria(from.id(), to.id(),
-        date.atStartOfDay(fromZone).toInstant(), date.plusDays(1).atStartOfDay(fromZone).toInstant(),
-        clock.instant(), (long) request.passengerCounts().adults() + request.passengerCounts().children(), page, size)));
     var grouped = new LinkedHashMap<String, List<FareRow>>();
-    for (var row : rows.fares()) grouped.computeIfAbsent(row.flightId(), key -> new ArrayList<>()).add(row);
+    for (var row : rows) grouped.computeIfAbsent(row.flightId(), key -> new ArrayList<>()).add(row);
     var flights = new ArrayList<Flight>();
     for (var group : grouped.values()) {
       var first = group.getFirst();
@@ -84,8 +152,7 @@ public class FlightSearchService {
           first.arrival().atZone(toZone).toOffsetDateTime(),
           Duration.between(first.departure(), first.arrival()).toMinutes(), fares));
     }
-    return new FlightSearchResponse(flights,
-        new Pagination(page, size, rows.total(), (rows.total() + size - 1) / size));
+    return flights;
   }
 
   private AirportRow airport(String code, String field) {

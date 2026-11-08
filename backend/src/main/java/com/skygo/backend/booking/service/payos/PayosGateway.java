@@ -5,6 +5,12 @@ import java.time.Instant;
 public interface PayosGateway {
   void requireConfigured();
   Link create(long orderCode, long amount, String description, Instant expiresAt);
+  Status lookup(long orderCode);
+  Status cancel(long orderCode);
+
+  record Transfer(String reference, long amount, String currency, String transactionDateTime) {}
+  record Status(String paymentLinkId, long orderCode, long amount, long amountPaid,
+      String status, java.util.List<Transfer> transactions) {}
 
   record Link(String paymentLinkId, long orderCode, long amount, String currency,
       String status, String description, String qrCode, String checkoutUrl) {}

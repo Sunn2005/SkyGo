@@ -24,6 +24,17 @@ public class PaymentAttemptRepository {
             rs.getString("qr_code")), holdId).stream().findFirst();
   }
 
+  public java.util.List<Attempt> forBooking(long bookingId) {
+    var holdIds = jdbc.queryForList("SELECT seat_hold_id FROM payment_attempt WHERE booking_id=? ORDER BY id",
+        Long.class, bookingId);
+    return holdIds.stream().map(id -> byHold(id).orElseThrow()).toList();
+  }
+
+  public void verifiedStatus(long id, String linkId, String status) {
+    jdbc.update("UPDATE payment_attempt SET payment_link_id=?,status=?,updated_at_utc=UTC_TIMESTAMP(6) WHERE id=?",
+        linkId, status, id);
+  }
+
   public void create(long bookingId, long holdId, long orderCode, long amount,
       String currency, Instant expiresAt) {
     jdbc.update("""

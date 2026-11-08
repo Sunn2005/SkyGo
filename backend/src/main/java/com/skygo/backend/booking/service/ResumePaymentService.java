@@ -9,6 +9,10 @@ import com.skygo.backend.booking.repository.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import static com.skygo.backend.booking.service.SeatHoldService.Outcome;
+import com.skygo.backend.booking.repository.PaymentAttemptRepository.Attempt;
+import com.skygo.backend.booking.service.ExpiredPaymentVerifier.Evidence;
+import com.skygo.backend.booking.service.payos.PayosWebhookVerifier.Transfer;
+import java.util.function.Function;
 
 @Service
 public class ResumePaymentService {
@@ -18,39 +22,61 @@ public class ResumePaymentService {
   private final FlightInventoryRepository inventory;
   private final SeatHoldExpiryService expiry;
   private final BookingOpenRepository details;
+  private final PaymentAttemptRepository attempts;
+  private final PaymentWebhookRepository payments;
+  private final ExpiredPaymentVerifier verifier;
 
   public ResumePaymentService(SeatHoldService service, SeatHoldRepository holds, BookingRepository bookings,
-      FlightInventoryRepository inventory, SeatHoldExpiryService expiry, BookingOpenRepository details) {
+      FlightInventoryRepository inventory, SeatHoldExpiryService expiry, BookingOpenRepository details,
+      PaymentAttemptRepository attempts, PaymentWebhookRepository payments, ExpiredPaymentVerifier verifier) {
     this.service = service;
     this.holds = holds;
     this.bookings = bookings;
     this.inventory = inventory;
     this.expiry = expiry;
     this.details = details;
+    this.attempts=attempts;
+    this.payments=payments;
+    this.verifier=verifier;
   }
 
   private record Prepared(BookingRepository.Booking booking, SeatHold hold) {}
 
   public BookingOpenResponse open(long user, String bookingId) {
-    return service.withUser(user, () -> {
-      var prepared = prepare(user, bookingId, true);
-      if (prepared.retry()) return Outcome.again();
-      return Outcome.ok(details.load(prepared.value().booking().id(), prepared.value().hold()));
-    });
+    return execute(user,bookingId,true,p -> details.load(p.booking().id(),p.hold()));
   }
 
   public ResumePaymentResponse resume(long user, String bookingId) {
-    return service.withUser(user, () -> {
-      var prepared = prepare(user, bookingId, false);
-      if (prepared.retry()) return Outcome.again();
-      var b = prepared.value().booking();
-      var h = prepared.value().hold();
-      return Outcome.ok(new ResumePaymentResponse(b.publicId(), "PENDING_PAYMENT", "PENDING",
-          h.publicId(), h.expiresAt(), b.total(), b.currency()));
+    return execute(user,bookingId,false,p -> {
+      var b=p.booking(); var h=p.hold();
+      return new ResumePaymentResponse(b.publicId(), "PENDING_PAYMENT", "PENDING",
+          h.publicId(), h.expiresAt(), b.total(), b.currency());
     });
   }
 
-  private Outcome<Prepared> prepare(long user, String bookingId, boolean allowClosed) {
+  private static class NeedsVerification extends RuntimeException {
+    final List<Attempt> attempts;
+    NeedsVerification(List<Attempt> attempts) { this.attempts=attempts; }
+  }
+
+  private <T> T execute(long user,String bookingId,boolean allowClosed,Function<Prepared,T> response) {
+    Map<Long,Evidence> verified=Map.of();
+    for(int retry=0;retry<3;retry++) {
+      final var evidence=verified;
+      try {
+        return service.withUser(user,()->{
+          var prepared=prepare(user,bookingId,allowClosed,evidence);
+          if(prepared.retry()) return Outcome.again();
+          if(prepared.error()!=null) return Outcome.failed(prepared.error());
+          return Outcome.ok(response.apply(prepared.value()));
+        });
+      } catch(NeedsVerification needed) { verified=verifier.verify(needed.attempts); }
+    }
+    throw ExpiredPaymentVerifier.unverified();
+  }
+
+  private Outcome<Prepared> prepare(long user, String bookingId, boolean allowClosed,
+      Map<Long,Evidence> verified) {
       var active = holds.active(user);
       var b = bookings.lock(bookingId, user);
       if (b.status().equals("PAID") || b.paymentStatus().equals("SUCCEEDED")) {
@@ -72,11 +98,36 @@ public class ResumePaymentService {
       }
       if (!b.status().equals("EXPIRED") || !b.paymentStatus().equals("EXPIRED"))
         throw new BookingException(409, "BOOKING_NOT_RESUMABLE", "Đơn không ở trạng thái có thể giữ lại chỗ.");
-      // Until the PayOS status lookup is implemented, never reopen a booking whose
-      // old payment link might have received money after the hold expired.
-      if (bookings.hasPaymentAttempt(b.id()))
-        throw new BookingException(409, "PAYMENT_STATUS_UNVERIFIED",
-            "Cần đối soát mã thanh toán cũ trước khi giữ lại chỗ.");
+      var oldAttempts=attempts.forBooking(b.id());
+      if(oldAttempts.stream().anyMatch(a -> !verified.containsKey(a.id())
+          || !verified.get(a.id()).expected().equals(a)))
+        throw new NeedsVerification(oldAttempts);
+      boolean hasMoney=false;
+      for(var a:oldAttempts) {
+        var evidence=verified.get(a.id());
+        var status=evidence.status();
+        boolean localMoney=payments.hasTransfers(a.id());
+        hasMoney |= evidence.hasMoney() || localMoney;
+        attempts.verifiedStatus(a.id(),status.paymentLinkId(),
+            status.amountPaid()>=a.amount() ? "PAID" : evidence.hasMoney() ? a.status() : status.status());
+        for(var t:status.transactions()) {
+          var recorded=payments.reference(t.reference());
+          if(recorded.isPresent()) {
+            var r=recorded.get();
+            if(r.attemptId()!=a.id() || r.amount()!=t.amount()
+                || !r.currency().equals(t.currency()) || !status.paymentLinkId().equals(r.paymentLinkId()))
+              throw ExpiredPaymentVerifier.unverified();
+          } else payments.record(a.id(),new Transfer(a.orderCode(),status.paymentLinkId(),
+              t.reference(),t.amount(),t.currency(),t.transactionDateTime(),true));
+        }
+        if(evidence.hasMoney() || localMoney) payments.reconcilePending(a.id(),"EXPIRED_HOLD_PROVIDER_PAYMENT");
+      }
+      if(hasMoney) {
+        payments.reconcilePayment(b.id());
+        if(allowClosed) return Outcome.ok(new Prepared(bookings.lock(b.id(),user),null));
+        return Outcome.failed(new BookingException(409,"PAYMENT_RECONCILIATION_REQUIRED",
+            "Link thanh toán cũ đã có giao dịch cần đối soát; không giữ chỗ hoặc yêu cầu thanh toán thêm."));
+      }
       var legs = bookings.legs(b.id());
       if (legs.size() != (b.tripType() == TripType.ONE_WAY ? 1 : 2)
           || legs.stream().noneMatch(l -> l.direction() == Direction.OUTBOUND))

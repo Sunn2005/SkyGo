@@ -38,10 +38,69 @@ public class PayosHttpGateway implements PayosGateway {
   }
 
   @Override public void requireConfigured() {
-    if (clientId.isBlank() || apiKey.isBlank() || checksumKey.isBlank()
-        || !absoluteUri(returnUrl) || !absoluteUri(cancelUrl))
+    requireCredentials();
+    if (!absoluteUri(returnUrl) || !absoluteUri(cancelUrl))
       throw new BookingException(503, "PAYOS_NOT_CONFIGURED",
           "PayOS chưa được cấu hình đầy đủ trên backend.");
+  }
+
+  private void requireCredentials() {
+    if (clientId.isBlank() || apiKey.isBlank() || checksumKey.isBlank())
+      throw new BookingException(503,"PAYOS_NOT_CONFIGURED","PayOS chưa được cấu hình đầy đủ trên backend.");
+  }
+
+  @Override public Status lookup(long orderCode) { return readStatus(orderCode, false); }
+  @Override public Status cancel(long orderCode) { return readStatus(orderCode, true); }
+
+  private Status readStatus(long orderCode, boolean cancel) {
+    requireCredentials();
+    try {
+      var builder = HttpRequest.newBuilder(URI.create(baseUrl + "/v2/payment-requests/"
+          + orderCode + (cancel ? "/cancel" : ""))).timeout(Duration.ofSeconds(12))
+          .header("x-client-id",clientId).header("x-api-key",apiKey)
+          .header("User-Agent","SkyGoBackend/1.0").header("Accept","application/json");
+      if (cancel) builder.header("Content-Type","application/json").POST(
+          HttpRequest.BodyPublishers.ofString("{\"cancellationReason\":\"Seat hold expired\"}"));
+      else builder.GET();
+      var response = http.send(builder.build(),HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode()!=200) throw new Failure(false,null);
+      var root = mapper.readTree(response.body());
+      var data = root.path("data");
+      if (!"00".equals(root.path("code").asText())
+          || !validResponseSignature(data,root.path("signature").asText(),checksumKey))
+        throw new Failure(false,null);
+      for (String field : List.of("orderCode","amount","amountPaid")) {
+        var value=data.path(field);
+        if (!value.isIntegralNumber() || !value.canConvertToLong() || value.asLong()<0)
+          throw new Failure(false,null);
+      }
+      String id=data.path("id").asText(), status=data.path("status").asText();
+      if (id.isBlank() || id.length()>64 || data.path("orderCode").asLong()!=orderCode
+          || data.path("amount").asLong()<=0
+          || !Set.of("PENDING","PROCESSING","PAID","CANCELLED","EXPIRED").contains(status))
+        throw new Failure(false,null);
+      var transfers=new ArrayList<Transfer>();
+      var transactions=data.path("transactions");
+      if (!transactions.isArray() && !(transactions.isObject() && transactions.isEmpty()))
+        throw new Failure(false,null);
+      for (int i=0;i<transactions.size();i++) {
+        var item=transactions.get(i);
+        var amount=item.path("amount");
+        String reference=item.path("reference").asText();
+        String currency=item.path("currency").asText("VND");
+        String time=item.path("transactionDateTime").asText("");
+        if (!item.path("reference").isTextual() || reference.isBlank() || reference.length()>128
+            || !amount.isIntegralNumber() || !amount.canConvertToLong() || amount.asLong()<=0
+            || !currency.matches("[A-Z]{3}") || time.length()>32)
+          throw new Failure(false,null);
+        transfers.add(new Transfer(reference,amount.asLong(),currency,time));
+      }
+      return new Status(id,orderCode,data.path("amount").asLong(),
+          data.path("amountPaid").asLong(),status,List.copyOf(transfers));
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt(); throw new Failure(false,ex);
+    } catch (Failure ex) { throw ex;
+    } catch (IOException | RuntimeException ex) { throw new Failure(false,ex); }
   }
 
   @Override public Link create(long orderCode, long amount, String description,
@@ -59,6 +118,7 @@ public class PayosHttpGateway implements PayosGateway {
       var request = HttpRequest.newBuilder(URI.create(baseUrl + "/v2/payment-requests"))
           .timeout(Duration.ofSeconds(12))
           .header("Content-Type", "application/json")
+          .header("User-Agent", "SkyGoBackend/1.0")
           .header("x-client-id", clientId).header("x-api-key", apiKey)
           .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)))
           .build();
@@ -107,14 +167,40 @@ public class PayosHttpGateway implements PayosGateway {
     var sorted = new TreeMap<String, String>();
     for (var field : data.properties()) {
       JsonNode value = field.getValue();
-      if (!value.isValueNode()) return false;
-      sorted.put(field.getKey(), value.isNull() ? "" : value.asText());
+      final String text;
+      if (value.isNull()) {
+        text = "";
+      } else if (value.isObject() || value.isArray()) {
+        // Jackson 3 cannot coerce containers to text. Canonicalize before scalar conversion.
+        text = canonicalJson(value);
+      } else {
+        String scalar = value.asText();
+        text = value.isTextual() && (scalar.equals("null") || scalar.equals("undefined"))
+            ? "" : scalar;
+      }
+      sorted.put(field.getKey(), text);
     }
     String joined = sorted.entrySet().stream()
         .map(field -> field.getKey() + "=" + field.getValue())
         .collect(java.util.stream.Collectors.joining("&"));
     return MessageDigest.isEqual(hmac(joined, key).getBytes(StandardCharsets.US_ASCII),
         signature.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.US_ASCII));
+  }
+
+  private static String canonicalJson(JsonNode node) {
+    if (node.isObject()) {
+      var sorted=new TreeMap<String,JsonNode>();
+      for(var field:node.properties()) sorted.put(field.getKey(),field.getValue());
+      var mapper=new ObjectMapper();
+      return "{"+sorted.entrySet().stream().map(e -> mapper.writeValueAsString(e.getKey())
+          +":"+canonicalJson(e.getValue())).collect(java.util.stream.Collectors.joining(","))+"}";
+    }
+    if (node.isArray()) {
+      var entries=new ArrayList<String>();
+      for(int i=0;i<node.size();i++) entries.add(canonicalJson(node.get(i)));
+      return "["+String.join(",",entries)+"]";
+    }
+    return node.toString();
   }
 
   private static String hmac(String input, String key) {

@@ -2,6 +2,8 @@ package com.skygo.backend.booking;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import com.skygo.backend.booking.contract.*;
@@ -10,9 +12,115 @@ import com.skygo.backend.booking.model.SeatHold.*;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.skygo.backend.booking.service.payos.PayosGateway;
+import java.util.List;
 
 @EnabledIfEnvironmentVariable(named="SKYGO_TEST_DB_URL",matches=".+")
 class ResumePaymentIntegrationTest extends BookingFixture {
+  @MockitoBean PayosGateway payos;
+
+  @Test void cancelledUnpaidLinkReholdsOnceAndQrBelongsToTheNewHold() throws Exception {
+    String booking=expiredBooking(true);
+    oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenReturn(provider(123456,"old-link",0,"CANCELLED"));
+    var first=resume.open(user,booking);
+    var second=resume.open(user,booking);
+    assertEquals(first.seatHoldId(),second.seatHoldId());
+    assertEquals(first.holdExpiresAt(),second.holdExpiresAt());
+    verify(payos,times(1)).lookup(123456);
+    verify(payos,never()).cancel(anyLong());
+    assertEquals(2,seats(outFare)); assertEquals(2,seats(backFare));
+    when(payos.create(anyLong(),anyLong(),anyString(),any())).thenAnswer(call -> {
+      long order=call.getArgument(0);
+      return new PayosGateway.Link("new-link",order,call.getArgument(1),"VND","PENDING",
+          call.getArgument(2),"NEW-QR","https://pay.payos.vn/web/new-link");
+    });
+    mvc.perform(post("/api/v1/bookings/"+booking+"/payment-link").with(as(user)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.seatHoldId").value(first.seatHoldId()))
+        .andExpect(jsonPath("$.data.paymentLink.paymentLinkId").value("new-link"));
+    assertEquals(2,jdbc.queryForObject("SELECT COUNT(*) FROM payment_attempt WHERE booking_id=(SELECT id FROM booking WHERE public_id=?)",Integer.class,booking));
+  }
+
+  @Test void pendingOldLinkIsCancelledOutsideDatabaseTransactionAndRechecked() {
+    String booking=expiredBooking(false); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenAnswer(call -> {
+      assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+      return provider(123456,"old-link",0,"PENDING");
+    }).thenReturn(provider(123456,"old-link",0,"CANCELLED"));
+    when(payos.cancel(123456)).thenReturn(provider(123456,"old-link",0,"CANCELLED"));
+    resume.open(user,booking);
+    verify(payos).cancel(123456); verify(payos,times(2)).lookup(123456);
+    assertEquals("CANCELLED",jdbc.queryForObject("SELECT status FROM payment_attempt WHERE order_code=123456",String.class));
+  }
+
+  @Test void moneyReceivedDuringCancellationPreventsReholdAndIsRecordedForReconciliation() {
+    String booking=expiredBooking(false); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenReturn(provider(123456,"old-link",0,"PENDING"),
+        new PayosGateway.Status("old-link",123456,2200,100,"CANCELLED",
+            List.of(new PayosGateway.Transfer("cancel-race",100,"VND","2030-01-10 07:15:00"))));
+    when(payos.cancel(123456)).thenThrow(new PayosGateway.Failure(false,null));
+    var opened=resume.open(user,booking);
+    assertEquals("RECONCILIATION_REQUIRED",opened.payment().status());
+    assertNull(opened.seatHoldId()); assertEquals(4,seats(outFare));
+    assertEquals("RECONCILIATION_REQUIRED",jdbc.queryForObject("SELECT handling_status FROM payment_transaction WHERE provider_reference='cancel-race'",String.class));
+    assertEquals("PAYMENT_RECONCILIATION_REQUIRED",assertThrows(BookingException.class,()->resume.resume(user,booking)).code);
+  }
+
+  @Test void fullyPaidExpiredLinkNeverIssuesTicketsOrReservesSeatsAgain() {
+    String booking=expiredBooking(false); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenReturn(new PayosGateway.Status("old-link",123456,2200,2200,"PAID",
+        List.of(new PayosGateway.Transfer("late-full",2200,"VND","2030-01-10 07:15:00"))));
+    assertEquals("RECONCILIATION_REQUIRED",resume.open(user,booking).payment().status());
+    verify(payos,never()).cancel(anyLong());
+    assertEquals(4,seats(outFare));
+    assertEquals("PAID",jdbc.queryForObject("SELECT status FROM payment_attempt WHERE order_code=123456",String.class));
+    assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM ticket WHERE booking_id=(SELECT id FROM booking WHERE public_id=?)",Integer.class,booking));
+    resume.open(user,booking);
+    assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM payment_transaction WHERE provider_reference='late-full'",Integer.class));
+  }
+
+  @Test void providerFailureOrProcessingStatusKeepsTheBookingExpired() {
+    String booking=expiredBooking(false); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenThrow(new PayosGateway.Failure(false,null));
+    assertEquals("PAYMENT_STATUS_UNVERIFIED",assertThrows(BookingException.class,()->resume.open(user,booking)).code);
+    doReturn(provider(123456,"old-link",0,"PROCESSING")).when(payos).lookup(123456);
+    assertEquals("PAYMENT_STATUS_UNVERIFIED",assertThrows(BookingException.class,()->resume.open(user,booking)).code);
+    verify(payos,never()).cancel(anyLong()); assertEquals(4,seats(outFare));
+  }
+
+  @Test void cancellationDoesNotReserveHalfARoundTripAndCanBeRetriedAfterCapacityReturns() {
+    String booking=expiredBooking(true); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenReturn(provider(123456,"old-link",0,"CANCELLED"));
+    jdbc.update("UPDATE flight_fare SET available_seats=0 WHERE id=?",backFare);
+    assertEquals("INSUFFICIENT_CAPACITY",assertThrows(BookingException.class,()->resume.open(user,booking)).code);
+    assertEquals(4,seats(outFare));
+    jdbc.update("UPDATE flight_fare SET available_seats=4 WHERE id=?",backFare);
+    resume.open(user,booking); assertEquals(2,seats(outFare)); assertEquals(2,seats(backFare));
+  }
+
+  @Test void webhookChangingPaymentWhileProviderIsQueriedPreventsAStaleRehold() {
+    String booking=expiredBooking(false); oldAttempt(booking,123456,"old-link");
+    when(payos.lookup(123456)).thenAnswer(call -> {
+      jdbc.update("UPDATE payment SET status='RECONCILIATION_REQUIRED' WHERE booking_id=(SELECT id FROM booking WHERE public_id=?)",booking);
+      return provider(123456,"old-link",0,"CANCELLED");
+    });
+    assertEquals("RECONCILIATION_REQUIRED",resume.open(user,booking).payment().status());
+    assertEquals(4,seats(outFare));
+  }
+
+  private PayosGateway.Status provider(long order,String link,long paid,String status) {
+    return new PayosGateway.Status(link,order,2200,paid,status,List.of());
+  }
+  private void oldAttempt(String booking,long order,String link) {
+    jdbc.update("""
+        INSERT INTO payment_attempt(payment_id,booking_id,seat_hold_id,order_code,payment_link_id,status,amount,expires_at_utc)
+        SELECT p.id,b.id,b.seat_hold_id,?,?,'PENDING',p.amount,h.expires_at_utc
+        FROM booking b JOIN payment p ON p.booking_id=b.id JOIN seat_hold h ON h.id=b.seat_hold_id
+        WHERE b.public_id=?
+        """,order,link,booking);
+  }
   @Test
   void openingExpiredBookingReholdsBeforeReturningItsSnapshotAndReusesActiveHold() throws Exception {
     String booking=expiredBooking(true);

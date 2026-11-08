@@ -54,6 +54,11 @@ public class PaymentWebhookRepository {
         """, Integer.class, attemptId) != 0;
   }
 
+  public boolean hasTransfers(long attemptId) {
+    return jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM payment_transaction WHERE payment_attempt_id=?)",
+        Integer.class,attemptId)!=0;
+  }
+
   public void reconcileTransfer(String reference, String reason) {
     jdbc.update("""
         UPDATE payment_transaction SET handling_status='RECONCILIATION_REQUIRED',

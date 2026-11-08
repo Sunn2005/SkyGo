@@ -44,11 +44,16 @@ PODS:
     - ExpoModulesCore
   - ExpoImage (58.0.17):
     - ExpoModulesCore
+  - ExpoImageManipulator (58.0.16):
+    - ExpoModulesCore
   - ExpoKeepAwake (58.0.3):
     - ExpoModulesCore
   - ExpoLinking (58.0.14):
     - ExpoModulesCore
   - ExpoLogBox (58.0.13):
+    - React-Core
+  - ExpoMediaLibrary (58.0.13):
+    - ExpoModulesCore
     - React-Core
   - ExpoModulesCore (58.0.26):
     - ExpoModulesJSI
@@ -89,6 +94,8 @@ PODS:
   - ExpoRouter (58.0.26):
     - ExpoModulesCore
     - RNScreens
+  - ExpoSQLite (58.0.15):
+    - ExpoModulesCore
   - ExpoStatusBar (58.0.4):
     - ExpoModulesCore
   - ExpoUI (58.0.23):
@@ -2194,14 +2201,17 @@ DEPENDENCIES:
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoGlassEffect (from `../node_modules/expo-glass-effect/ios`)
   - ExpoImage (from `../node_modules/expo-image/ios/ExpoImage.podspec`)
+  - ExpoImageManipulator (from `../node_modules/expo-image-manipulator/ios/ExpoImageManipulator.podspec`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - "ExpoLogBox (from `../node_modules/@expo/log-box`)"
+  - ExpoMediaLibrary (from `../node_modules/expo-media-library/ios/ExpoMediaLibrary.podspec`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoModulesWorkletsAdapter (from `../node_modules/expo-modules-core`)
   - ExpoRouter (from `../node_modules/expo-router/ios`)
+  - ExpoSQLite (from `../node_modules/expo-sqlite/ios`)
   - ExpoStatusBar (from `../node_modules/expo-status-bar/ios`)
   - "ExpoUI (from `../node_modules/@expo/ui/ios`)"
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -2317,12 +2327,16 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-glass-effect/ios"
   ExpoImage:
     :podspec: "../node_modules/expo-image/ios/ExpoImage.podspec"
+  ExpoImageManipulator:
+    :podspec: "../node_modules/expo-image-manipulator/ios/ExpoImageManipulator.podspec"
   ExpoKeepAwake:
     :path: "../node_modules/expo/node_modules/expo-keep-awake/ios"
   ExpoLinking:
     :path: "../node_modules/expo-linking/ios"
   ExpoLogBox:
     :path: "../node_modules/@expo/log-box"
+  ExpoMediaLibrary:
+    :podspec: "../node_modules/expo-media-library/ios/ExpoMediaLibrary.podspec"
   ExpoModulesCore:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesCore.podspec"
   ExpoModulesJSI:
@@ -2333,6 +2347,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoRouter:
     :path: "../node_modules/expo-router/ios"
+  ExpoSQLite:
+    :path: "../node_modules/expo-sqlite/ios"
   ExpoStatusBar:
     :path: "../node_modules/expo-status-bar/ios"
   ExpoUI:
@@ -2530,14 +2546,17 @@ SPEC CHECKSUMS:
   ExpoFont: d25bedeb2221ef403800c20a1882ba8e7c7ff013
   ExpoGlassEffect: 7c0e3917cb58499620eeaa779c17610c3860614a
   ExpoImage: 8ba7a2af37771a33b0e16be1e8125bc21e8d3e44
+  ExpoImageManipulator: 04b52c7615a3fdf81c255fdd84639a87ec31eeea
   ExpoKeepAwake: 4b1d72985be0a6762469631fb767160859ce4284
   ExpoLinking: 5d79e2ca20dde1c78850dd81f84fc6b4fdb18249
   ExpoLogBox: e09b1da900cec7d5b5cac5336bcf432a5bdfe020
+  ExpoMediaLibrary: 1dba767d1eb6758934a48c22c25b5eb16bcd9265
   ExpoModulesCore: 9f6bad64249baddd5469a17377bbf0173beca44a
   ExpoModulesJSI: 19c4f2ef73bcbb12e768725d9f410d0f954d1fb1
   ExpoModulesWorklets: 18d407422107642993d874ed54d7a5bedcb1426b
   ExpoModulesWorkletsAdapter: f5fb0cb9b512c7a274d8dc0222be4adcae51fddb
   ExpoRouter: adc4da5b5119396c92899d188f75c80bb4e91d40
+  ExpoSQLite: 7d0c22cf860d7fba3a53bd77d5e0d72108a8a2ee
   ExpoStatusBar: 9e7d5cf9d9cef51bdbbb199dfbb738f0e0bf789a
   ExpoUI: e0ace81f8cbe6143fc4378101c9df2ab6b0d3244
   fast_float: 908e5ee35999f3d91af4b962ac951acac591866c

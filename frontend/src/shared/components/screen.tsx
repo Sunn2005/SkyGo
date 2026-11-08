@@ -16,6 +16,8 @@ export function Screen({
   home,
   onBack,
   design = false,
+  top,
+  customHeader,
 }: {
   children: ReactNode;
   title: string;
@@ -25,6 +27,8 @@ export function Screen({
   home?: boolean;
   onBack?: () => void;
   design?: boolean;
+  top?: ReactNode;
+  customHeader?: ReactNode;
 }) {
   const inset = useSafeAreaInsets();
   const { horizontalPadding } = useResponsiveLayout();
@@ -37,6 +41,7 @@ export function Screen({
       <Stack.Screen
         options={{
           title,
+          headerShown: !customHeader,
           headerTitleAlign: "left",
           headerShadowVisible: false,
           headerStyle: { backgroundColor: c.background },
@@ -92,6 +97,25 @@ export function Screen({
                 ),
         }}
       />
+      {customHeader && (
+        <View style={{ paddingTop: inset.top, backgroundColor: c.tint }}>
+          {customHeader}
+        </View>
+      )}
+      {top && (
+        <View
+          style={{
+            paddingHorizontal: design ? horizontalPadding : space.xl,
+            paddingTop: 8,
+            paddingBottom: 12,
+            backgroundColor: c.surface,
+            borderBottomWidth: 1,
+            borderBottomColor: c.line,
+          }}
+        >
+          {top}
+        </View>
+      )}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"

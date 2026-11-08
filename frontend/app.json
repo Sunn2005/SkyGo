@@ -28,7 +28,15 @@
       "expo-router",
       "expo-image",
       "expo-font",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Cho phép SkyGo lưu mã QR thanh toán vào thư viện ảnh của bạn.",
+          "granularPermissions": []
+        }
+      ]
     ]
   }
 }

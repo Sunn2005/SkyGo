@@ -1,11 +1,12 @@
 import LivePayosScreen from "./live-payos-screen";
-import { Platform, Share, View } from "react-native";
+import { View } from "react-native";
 import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
 import { Redirect, router } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import type { PaymentOutcome } from "../types";
-import { demoQr } from "../data-demo-qr";
+import { SaveQrButton } from "../components/save-qr-button";
+import { paymentQrImage } from "../services/qr-code";
 import { money } from "@/shared/utils/format";
 import { Button, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Panel } from "@/modules/booking/components/design";
@@ -13,6 +14,8 @@ import { passengerSummary } from "@/modules/booking/services/booking-rules";
 import { dateLabel } from "@/shared/utils/date";
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
+const demoQr = paymentQrImage("SKYGO DEMO - KHONG DUNG DE THANH TOAN");
+
 export default function PayosScreen() {
   const b = useBooking();
   if (b.livePayment)
@@ -132,20 +135,10 @@ function MockPayosScreen() {
               contentFit="contain"
               accessibilityLabel="QR minh họa, không dùng để chuyển tiền"
             />
-            <Button
-              title="↓  Lưu mã QR"
-              onPress={() => {
-                if (Platform.OS === "web") {
-                  const a = document.createElement("a");
-                  a.href = demoQr;
-                  a.download = "skygo-qr-demo.svg";
-                  a.click();
-                } else
-                  void Share.share({
-                    url: demoQr,
-                    message: "QR minh họa SkyGo, không dùng để thanh toán.",
-                  }).catch(() => setError("Chưa thể lưu mã QR."));
-              }}
+            <SaveQrButton
+              uri={demoQr}
+              name="skygo-qr-demo"
+              disabled={busy || remaining === 0}
             />
           </>
         )}

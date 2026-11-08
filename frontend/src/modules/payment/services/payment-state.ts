@@ -17,6 +17,9 @@ export function holdExpired(
   now = Date.now(),
 ) {
   return (
+    booking.requiresRehold ||
+    booking.bookingStatus === "AWAITING_REHOLD" ||
+    booking.seatHold?.status === "RELEASED" ||
     booking.bookingStatus === "EXPIRED" ||
     booking.payment?.status === "EXPIRED" ||
     !booking.seatHold ||
@@ -34,8 +37,25 @@ export function canPay(
     booking.bookingStatus === "PENDING_PAYMENT" &&
     booking.payment?.status === "PENDING" &&
     booking.seatHold?.status === "ACTIVE" &&
+    (!booking.bookingClosesAt ||
+      serverNow(booking, receivedAt, now) <
+        Date.parse(booking.bookingClosesAt)) &&
     !needsReconciliation(booking) &&
     !holdExpired(booking, receivedAt, now)
+  );
+}
+export function canResume(
+  booking: BookingDetail,
+  receivedAt: number,
+  now = Date.now(),
+) {
+  return (
+    booking.canResumePayment &&
+    !isBookingPaid(booking) &&
+    !needsReconciliation(booking) &&
+    booking.bookingStatus !== "CANCELLED" &&
+    !!booking.bookingClosesAt &&
+    serverNow(booking, receivedAt, now) < Date.parse(booking.bookingClosesAt)
   );
 }
 export function linkMatchesBooking(link: PaymentLink, booking: BookingDetail) {
@@ -58,13 +78,20 @@ export function paymentMessage(
     PAYMENT_LINK_UNVERIFIED:
       "Chưa xác minh được link thanh toán. Vui lòng kiểm tra trạng thái hoặc liên hệ hỗ trợ; chưa tạo link khác.",
     PAYMENT_STATUS_UNVERIFIED:
-      "Giao dịch cũ cần được đối soát trước khi thanh toán tiếp. Vui lòng liên hệ hỗ trợ.",
+      "Chưa xác minh được trạng thái thanh toán cũ. Vui lòng kiểm tra lại sau; chưa thanh toán thêm.",
     PAYMENT_RECONCILIATION_REQUIRED:
       "Giao dịch cần đối soát. Vui lòng liên hệ hỗ trợ trước khi thanh toán tiếp.",
     SEAT_HOLD_EXPIRED:
       "Thời gian giữ chỗ đã hết. Vui lòng mở lại đơn để kiểm tra khả năng giữ chỗ.",
     INSUFFICIENT_CAPACITY:
-      "Không còn đủ chỗ cho hành trình này. Vui lòng tìm chuyến khác.",
+      "Hiện chưa đủ ghế. Hãy quay lại sau nhé. Đơn của bạn vẫn được lưu.",
+    BOOKING_WINDOW_CLOSED: "Đã quá thời hạn đặt vé. Vui lòng tìm chuyến khác.",
+    SEAT_HOLD_VERSION_CONFLICT:
+      "Lượt giữ chỗ đã thay đổi. Vui lòng tải lại và xác nhận lựa chọn một lần nữa.",
+    HOLD_ATTACHED_TO_BOOKING:
+      "Bạn đang giữ chỗ cho đơn khác. Vui lòng mở đơn đó hoặc đổi lựa chọn qua luồng chuyển giữ chỗ.",
+    HOLD_SWITCH_IN_PROGRESS:
+      "Đang xử lý chuyển giữ chỗ. Vui lòng thử lại đúng lựa chọn trước.",
     UNAUTHENTICATED: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
   };
   return code ? (messages[code] ?? fallback) : fallback;

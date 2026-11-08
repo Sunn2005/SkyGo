@@ -9,8 +9,17 @@ export type Hold = {
   tripType: string;
   expiresAt: string;
   bookingId: string | null;
+  version: number;
   passengerCounts: { adults: number; children: number; infants: number };
-  legs: { direction: Direction; flightId: string; cabinClass: string }[];
+  legs: {
+    direction: Direction;
+    flightId: string;
+    cabinClass: string;
+    origin: { code: string; city: string };
+    destination: { code: string; city: string };
+    departureAt: string;
+    arrivalAt: string;
+  }[];
 };
 export type BaggageLeg = {
   direction: Direction;
@@ -104,6 +113,41 @@ export function passengerRequest(p: Traveller, i: number) {
   };
 }
 export const bookingApi = {
+  replace: (token: string, hold: Hold, s: Search, flights: Flight[]) =>
+    apiRequest<Hold>(
+      `/api/v1/seat-holds/${encodeURIComponent(hold.seatHoldId)}/selection`,
+      {
+        token,
+        method: "PUT",
+        body: {
+          ...quoteRequest(hold.seatHoldId, s, flights),
+          seatHoldId: undefined,
+          expectedVersion: hold.version,
+        },
+      },
+    ),
+  switch: (
+    token: string,
+    bookingId: string,
+    body: {
+      expectedSeatHoldId: string;
+      expectedVersion: number;
+      tripType: string;
+      passengerCounts: Hold["passengerCounts"];
+      selections: ReturnType<typeof selection>[];
+    },
+    key: string,
+  ) =>
+    apiRequest<{
+      switchId: string;
+      previousBooking: { bookingId: string; status: string };
+      seatHold: Hold;
+    }>(`/api/v1/bookings/${encodeURIComponent(bookingId)}/switch-hold`, {
+      token,
+      method: "POST",
+      body,
+      headers: { "Idempotency-Key": key },
+    }),
   current: (token: string) =>
     apiRequest<Hold | null>("/api/v1/seat-holds/current", { token }),
   hold: (token: string, s: Search, f: Flight) =>

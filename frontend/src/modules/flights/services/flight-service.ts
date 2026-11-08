@@ -95,6 +95,7 @@ export async function searchFlights(
   direction: "OUTBOUND" | "RETURN",
   page = 0,
   signal?: AbortSignal,
+  size = 20,
 ) {
   const result = await apiRequest<Page<ApiFlight>>("/api/v1/flights/search", {
     method: "POST",
@@ -115,8 +116,54 @@ export async function searchFlights(
       },
       direction,
       page,
-      size: 20,
+      size,
     },
   });
   return { ...result, data: result.data.map(mapFlight) };
+}
+
+export type NearbyDay = {
+  date: string;
+  selectable: boolean;
+  disabledReason: string | null;
+  flights: Flight[];
+  pagination: Page<Flight>["pagination"] & { hasMore: boolean };
+};
+export async function searchNearbyFlights(
+  search: Search,
+  direction: "OUTBOUND" | "RETURN",
+  signal?: AbortSignal,
+) {
+  const result = await apiRequest<{
+    centerDate: string;
+    startDate: string;
+    endDate: string;
+    direction: string;
+    days: (Omit<NearbyDay, "flights"> & { flights: ApiFlight[] })[];
+  }>("/api/v1/flights/search/nearby-days", {
+    method: "POST",
+    signal,
+    body: {
+      tripType: search.type === "one-way" ? "ONE_WAY" : "ROUND_TRIP",
+      origin: search.from,
+      destination: search.to,
+      departureDate: search.date,
+      ...(search.type === "round-trip"
+        ? { returnDate: search.secondDate }
+        : {}),
+      passengerCounts: {
+        adults: search.count,
+        children: search.children ?? 0,
+        infants: search.infants ?? 0,
+      },
+      direction,
+    },
+  });
+  return {
+    ...result,
+    days: result.days.map((day) => ({
+      ...day,
+      flights: day.flights.map(mapFlight),
+    })),
+  };
 }

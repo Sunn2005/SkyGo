@@ -7,12 +7,15 @@ const ts = require("typescript");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skygo-api-"));
 for (const [source, target] of [
   ["shared/api/client", "client"],
+  ["shared/utils/date-wheel", "date-wheel"],
   ["modules/account/types", "types"],
   ["modules/account/utils/login-destination", "login-destination"],
   ["modules/flights/data/airports", "airports"],
   ["modules/flights/services/flight-service", "flights"],
+  ["modules/flights/services/nearby-days", "nearby-days"],
   ["modules/account/data/api-account-service", "account"],
   ["modules/booking/data/api-booking-service", "booking-api"],
+  ["modules/booking/services/live-selection", "live-selection"],
 ]) {
   let text = fs.readFileSync(
     path.join(__dirname, "../src", source + ".ts"),
@@ -25,7 +28,8 @@ for (const [source, target] of [
     )
     .replace('"@/shared/api/client"', '"./client"')
     .replace('"../types"', '"./types"')
-    .replace('"../data/airports"', '"./airports"');
+    .replace('"../data/airports"', '"./airports"')
+    .replace('"../data/api-booking-service"', '"./booking-api"');
   fs.writeFileSync(
     path.join(dir, target + ".js"),
     ts.transpileModule(text, {
@@ -414,4 +418,369 @@ test("review configuration failure stays an API error and never becomes a mock r
     assert.equal(error.code, "REVIEW_ENCRYPTION_UNAVAILABLE");
     return true;
   });
+});
+
+const selectionSearch = {
+  type: "one-way",
+  from: "SGN",
+  to: "HAN",
+  date: "2026-11-21",
+  secondDate: "2026-11-24",
+  count: 2,
+  cabin: "Phổ thông",
+};
+const selectedFlight = { id: "new-flight", cabin: "Phổ thông" };
+const currentHold = {
+  seatHoldId: "old-hold",
+  version: 4,
+  bookingId: "saved-order",
+  expiresAt: "2026-11-21T10:15:00Z",
+};
+const { createLiveSelection, HoldConfirmationRequired } = require(
+  path.join(dir, "live-selection.js"),
+);
+const reply = (data) => new Response(JSON.stringify({ data }));
+
+test("atomic selection changes trip type and counts in one request with hold version", async () => {
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return reply(
+      calls.length === 1
+        ? { ...currentHold, bookingId: null, tripType: "ROUND_TRIP" }
+        : { ...currentHold, version: 5, bookingId: null },
+    );
+  };
+  const result = await createLiveSelection().select(
+    "token",
+    selectionSearch,
+    [selectedFlight],
+    () => {},
+  );
+  assert.equal(result.version, 5);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.endsWith("/old-hold/selection"));
+  assert.equal(calls[1].method, "PUT");
+  assert.deepEqual(JSON.parse(calls[1].body), {
+    expectedVersion: 4,
+    tripType: "ONE_WAY",
+    passengerCounts: { adults: 2, children: 0, infants: 0 },
+    selections: [
+      { direction: "OUTBOUND", flightId: "new-flight", cabinClass: "ECONOMY" },
+    ],
+  });
+});
+
+test("booked hold requires confirmation and a stale confirmation never closes QR", async () => {
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return reply(currentHold);
+  };
+  const manager = createLiveSelection();
+  for (const confirmation of [
+    undefined,
+    { seatHoldId: "old-hold", version: 3 },
+    { seatHoldId: "other", version: 4 },
+  ]) {
+    await assert.rejects(
+      manager.select(
+        "token",
+        selectionSearch,
+        [selectedFlight],
+        () => {},
+        confirmation,
+      ),
+      (error) => {
+        assert.ok(error instanceof HoldConfirmationRequired);
+        assert.equal(error.hold.seatHoldId, "old-hold");
+        assert.equal(error.hold.version, 4);
+        assert.equal(error.hold.bookingId, "saved-order");
+        return true;
+      },
+    );
+  }
+  assert.ok(calls.every((call) => call.method === "GET"));
+});
+
+test("lost switch response retries identical key/body without mutating a different selection", async () => {
+  const calls = [];
+  let switchCalls = 0;
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    if (url.endsWith("/current")) return reply(currentHold);
+    if (++switchCalls === 1) throw new TypeError("response lost after commit");
+    return reply({
+      switchId: "switch-1",
+      seatHold: {
+        ...currentHold,
+        seatHoldId: "target",
+        bookingId: null,
+        version: 1,
+      },
+    });
+  };
+  const manager = createLiveSelection();
+  const confirmation = { seatHoldId: "old-hold", version: 4 };
+  await assert.rejects(
+    manager.select(
+      "token",
+      selectionSearch,
+      [selectedFlight],
+      () => {},
+      confirmation,
+    ),
+    /Không kết nối/,
+  );
+  await assert.rejects(
+    manager.select("token", selectionSearch, [{ id: "other" }], () => {}),
+    /Lần đổi trước/,
+  );
+  const hold = await manager.select(
+    "token",
+    selectionSearch,
+    [selectedFlight],
+    () => {},
+  );
+  assert.equal(hold.seatHoldId, "target");
+  const writes = calls.filter((call) => call.method === "POST");
+  assert.equal(writes.length, 2);
+  assert.equal(
+    writes[0].headers["Idempotency-Key"],
+    writes[1].headers["Idempotency-Key"],
+  );
+  assert.equal(writes[0].body, writes[1].body);
+  assert.equal(JSON.parse(writes[0].body).expectedVersion, 4);
+});
+
+test("changed session blocks a mutation after current hold was read", async () => {
+  let writes = 0;
+  global.fetch = async (_, options) => {
+    if (options.method !== "GET") writes++;
+    return reply(null);
+  };
+  await assert.rejects(
+    createLiveSelection().select(
+      "token",
+      selectionSearch,
+      [selectedFlight],
+      () => {
+        throw Error("session changed");
+      },
+    ),
+    /session changed/,
+  );
+  assert.equal(writes, 0);
+});
+
+test("nearby search preserves disabled/empty days and return route; load more uses chosen day and size 10", async () => {
+  const { searchNearbyFlights } = require(path.join(dir, "flights.js"));
+  const search = { ...selectionSearch, type: "round-trip" };
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    if (url.endsWith("nearby-days"))
+      return reply({
+        centerDate: search.secondDate,
+        days: [
+          {
+            date: "2026-11-21",
+            selectable: false,
+            disabledReason: "RETURN_NOT_AFTER_DEPARTURE",
+            flights: [],
+            pagination: {
+              page: 0,
+              size: 10,
+              totalElements: 0,
+              totalPages: 0,
+              hasMore: false,
+            },
+          },
+          {
+            date: "2026-11-24",
+            selectable: true,
+            disabledReason: null,
+            flights: [sampleFlight],
+            pagination: {
+              page: 0,
+              size: 10,
+              totalElements: 11,
+              totalPages: 2,
+              hasMore: true,
+            },
+          },
+        ],
+      });
+    return new Response(
+      JSON.stringify({
+        data: [],
+        pagination: { page: 1, size: 10, totalPages: 2 },
+      }),
+    );
+  };
+  const result = await searchNearbyFlights(search, "RETURN");
+  assert.equal(result.days[0].selectable, false);
+  assert.equal(result.days[0].disabledReason, "RETURN_NOT_AFTER_DEPARTURE");
+  assert.equal(result.days[1].flights[0].id, sampleFlight.flightId);
+  assert.equal(result.days[1].pagination.hasMore, true);
+  assert.equal(calls[0].body.origin, "SGN");
+  assert.equal(calls[0].body.destination, "HAN");
+  assert.equal(calls[0].body.direction, "RETURN");
+  assert.equal(Object.hasOwn(calls[0].body, "page"), false);
+  await searchFlights(
+    { ...search, secondDate: "2026-11-25" },
+    "RETURN",
+    1,
+    undefined,
+    10,
+  );
+  assert.equal(calls[1].body.departureDate, search.date);
+  assert.equal(calls[1].body.returnDate, "2026-11-25");
+  assert.equal(calls[1].body.size, 10);
+});
+
+test("version conflict reloads current hold and requires fresh confirmation before replacement", async () => {
+  let version = 4;
+  let writes = 0;
+  global.fetch = async (url, options) => {
+    if (url.endsWith("/current"))
+      return reply({ ...currentHold, bookingId: null, version });
+    writes++;
+    if (writes === 1) {
+      version = 5;
+      return new Response(
+        JSON.stringify({
+          error: { code: "SEAT_HOLD_VERSION_CONFLICT", message: "changed" },
+        }),
+        { status: 409 },
+      );
+    }
+    assert.equal(JSON.parse(options.body).expectedVersion, 5);
+    return reply({ ...currentHold, bookingId: null, version: 6 });
+  };
+  const manager = createLiveSelection();
+  let confirmation;
+  await assert.rejects(
+    manager.select("token", selectionSearch, [selectedFlight], () => {}),
+    (error) => {
+      assert.ok(error instanceof HoldConfirmationRequired);
+      confirmation = error.hold;
+      assert.equal(confirmation.version, 5);
+      return true;
+    },
+  );
+  assert.equal(writes, 1);
+  await assert.rejects(
+    manager.select("token", selectionSearch, [selectedFlight], () => {}, {
+      ...confirmation,
+      version: 4,
+    }),
+    HoldConfirmationRequired,
+  );
+  assert.equal(writes, 1);
+  const result = await manager.select(
+    "token",
+    selectionSearch,
+    [selectedFlight],
+    () => {},
+    confirmation,
+  );
+  assert.equal(result.version, 6);
+  assert.equal(writes, 2);
+});
+
+test("PayOS callback login destinations survive sign-in and reject arbitrary redirect targets", () => {
+  const { loginDestination } = require(path.join(dir, "login-destination.js"));
+  for (const route of ["payment/success", "payment/cancel"]) {
+    for (const value of [route, "/" + route])
+      assert.deepEqual(loginDestination(value), {
+        href: "/" + route,
+        resumeFlight: false,
+      });
+  }
+  for (const value of [
+    "payment/success?status=PAID",
+    "//payment/success",
+    "https://example.com/payment/success",
+    "payment/../success",
+  ])
+    assert.equal(loginDestination(value).href, "/");
+});
+
+test("scrolling date windows preserves round-trip bounds and the original route", () => {
+  const { nearbyWindowSearch, shiftDate } = require(
+    path.join(dir, "nearby-days.js"),
+  );
+  const search = {
+    ...selectionSearch,
+    type: "round-trip",
+    date: "2026-11-10",
+    secondDate: "2026-11-20",
+  };
+  const outbound = nearbyWindowSearch(search, "OUTBOUND", "2026-11-18", "next");
+  assert.equal(outbound.date, "2026-11-19");
+  assert.equal(outbound.secondDate, "2026-11-20");
+  const back = nearbyWindowSearch(search, "RETURN", "2026-11-23", "next");
+  assert.equal(back.secondDate, "2026-11-27");
+  assert.equal(back.date, search.date);
+  assert.equal(back.from, search.from);
+  assert.equal(back.to, search.to);
+  const earlier = nearbyWindowSearch(
+    search,
+    "OUTBOUND",
+    "2026-11-09",
+    "previous",
+  );
+  assert.equal(earlier.date, "2026-11-09");
+  assert.equal(shiftDate("2026-12-30", 4), "2027-01-03");
+  assert.equal(shiftDate("2028-03-01", -1), "2028-02-29");
+});
+
+test("overlapping date batches keep previously loaded flight pages and distinct dates sorted", () => {
+  const { mergeNearbyDays } = require(path.join(dir, "nearby-days.js"));
+  const loaded = {
+    date: "2026-11-10",
+    flights: [{ id: "first" }, { id: "second-page" }],
+    pagination: { page: 1 },
+  };
+  const current = [loaded, { date: "2026-11-11", flights: [] }];
+  const next = [
+    { date: "2026-11-10", flights: [{ id: "first" }], pagination: { page: 0 } },
+    { date: "2026-11-09", flights: [] },
+    { date: "2026-11-12", flights: [] },
+  ];
+  const result = mergeNearbyDays(current, next);
+  assert.deepEqual(
+    result.map((day) => day.date),
+    ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"],
+  );
+  assert.equal(result[1], loaded);
+  assert.equal(result[1].pagination.page, 1);
+  assert.equal(result[1].flights.length, 2);
+  assert.equal(current.length, 2);
+});
+
+test("birth date wheel clamps leap days, short months and future dates", () => {
+  const { changeDatePart, dateWheelRanges } = require(
+    path.join(dir, "date-wheel.js"),
+  );
+  const min = "1900-01-01",
+    max = "2026-11-08";
+  assert.equal(
+    changeDatePart("2024-02-29", "year", 2023, min, max),
+    "2023-02-28",
+  );
+  assert.equal(
+    changeDatePart("2024-01-31", "month", 2, min, max),
+    "2024-02-29",
+  );
+  assert.equal(changeDatePart("2026-11-08", "month", 12, min, max), max);
+  assert.equal(changeDatePart("1900-01-01", "year", 1899, min, max), min);
+  const current = dateWheelRanges(max, min, max);
+  assert.equal(current.year[0], 2026);
+  assert.equal(current.year.at(-1), 1900);
+  assert.equal(current.month.at(-1), 11);
+  assert.equal(current.day.at(-1), 8);
+  assert.equal(dateWheelRanges("2024-02-29", min, max).day.length, 29);
+  assert.equal(dateWheelRanges("2023-02-28", min, max).day.length, 28);
 });

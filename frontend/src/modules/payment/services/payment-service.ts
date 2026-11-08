@@ -28,6 +28,11 @@ export type BookingDetail = {
   bookingId: string;
   bookingCode: string;
   bookingStatus: string;
+  requiresRehold: boolean;
+  canResumePayment: boolean;
+  bookingClosesAt: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
   createdAt: string;
   serverTime: string;
   tripType: string;
@@ -99,6 +104,18 @@ export type PaymentLink = {
 const bookingPath = (id: string) =>
   `/api/v1/bookings/${encodeURIComponent(id)}`;
 export const paymentApi = {
+  resume: (
+    token: string,
+    id: string,
+    confirmation?: { expectedSeatHoldId: string; expectedVersion: number },
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<unknown>(`${bookingPath(id)}/resume-payment`, {
+      token,
+      signal,
+      method: "POST",
+      body: confirmation,
+    }),
   detail: (token: string, id: string, signal?: AbortSignal) =>
     apiRequest<BookingDetail>(bookingPath(id), { token, signal }),
   link: (token: string, id: string, signal?: AbortSignal) =>

@@ -8,6 +8,7 @@ import {
 } from "@/modules/flights/components/flight-calendar";
 import { validDate } from "@/shared/utils/date";
 import { colors as c } from "@/shared/theme";
+import { DateWheel } from "./date-wheel";
 
 export function DateField({
   label,
@@ -91,16 +92,41 @@ export function DateField({
                 <Label size={22}>×</Label>
               </Tap>
             </Row>
-            <ScrollView>
-              <FlightCalendar
-                key={open ? "open" : "closed"}
-                value={draft}
+            {pastOnly && (
+              <Label size={12} muted style={{ textAlign: "center" }}>
+                Cuộn từng cột để chọn năm, tháng và ngày
+              </Label>
+            )}
+            {pastOnly ? (
+              <DateWheel
+                key={open ? "birth-open" : "birth-closed"}
+                value={draft || today}
                 minDate={min}
                 maxDate={max}
-                quickYear
                 onChange={setDraft}
               />
-            </ScrollView>
+            ) : (
+              <ScrollView>
+                <FlightCalendar
+                  key={open ? "open" : "closed"}
+                  value={draft}
+                  minDate={min}
+                  maxDate={max}
+                  quickYear
+                  onChange={setDraft}
+                />
+              </ScrollView>
+            )}
+            {pastOnly && (
+              <Label
+                size={13}
+                weight="semibold"
+                color={c.primary}
+                style={{ textAlign: "center" }}
+              >
+                {draft.slice(8, 10)}/{draft.slice(5, 7)}/{draft.slice(0, 4)}
+              </Label>
+            )}
             <Button
               title="Chọn ngày này"
               onPress={() => {

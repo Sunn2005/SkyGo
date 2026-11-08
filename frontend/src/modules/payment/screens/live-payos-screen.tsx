@@ -6,12 +6,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { AppState, Platform, Share, View } from "react-native";
-import * as Linking from "expo-linking";
+import { AppState, View } from "react-native";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import { useAccount } from "@/modules/account/context/account-context";
 import { useBooking } from "@/modules/booking/context/booking-context";
+import {
+  bookingApi,
+  type Hold,
+} from "@/modules/booking/data/api-booking-service";
 import { ApiError } from "@/shared/api/client";
 import { Screen } from "@/shared/components/screen";
 import { Button, Label, Notice, Row, Tap } from "@/shared/components/ui";
@@ -24,6 +27,7 @@ import {
 } from "../services/payment-service";
 import {
   canPay,
+  canResume,
   holdExpired,
   isBookingPaid,
   linkMatchesBooking,
@@ -31,9 +35,16 @@ import {
   paymentMessage,
   serverNow,
 } from "../services/payment-state";
+import { SaveQrButton } from "../components/save-qr-button";
 import { paymentQrImage } from "../services/qr-code";
 
-export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
+export default function LivePayosScreen({
+  bookingId,
+  returnOutcome,
+}: {
+  bookingId: string;
+  returnOutcome?: "success" | "cancel";
+}) {
   const b = useBooking();
   const { session } = useAccount();
   const token = session?.accessToken;
@@ -50,10 +61,10 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [blocked, setBlocked] = useState(false);
+  const [confirmation, setConfirmation] = useState<Hold | null>(null);
   const [clock, setClock] = useState(Date.now);
   const scope = useRef<{
-    check: () => Promise<void>;
-    retry: () => Promise<void>;
+    retry: (hold?: Hold) => Promise<void>;
   } | null>(null);
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000);
@@ -70,7 +81,6 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       let inFlight: Promise<BookingDetail> | null = null;
       let mutation = false;
-      let unsafeToRetry = false;
       let terminal = false;
       let initialising = true;
       const report = (cause: unknown) => {
@@ -79,12 +89,10 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
         if (
           [
             "PAYMENT_LINK_UNVERIFIED",
-            "PAYMENT_STATUS_UNVERIFIED",
             "PAYMENT_RECONCILIATION_REQUIRED",
             "UNAUTHENTICATED",
           ].includes(code ?? "")
         ) {
-          unsafeToRetry = true;
           setBlocked(true);
         }
         setError(
@@ -104,6 +112,10 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
             setSnapshot({ data, receivedAt });
             acceptRef.current(data);
             terminal =
+              data.bookingStatus === "CANCELLED" ||
+              (!!data.bookingClosesAt &&
+                serverNow(data, receivedAt) >=
+                  Date.parse(data.bookingClosesAt)) ||
               isBookingPaid(data) ||
               needsReconciliation(data) ||
               holdExpired(data, receivedAt);
@@ -149,22 +161,7 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
           throw cause;
         }
       };
-      const check = async () => {
-        if (!active || mutation || initialising) return;
-        setBusy(true);
-        try {
-          await read();
-          if (active && !unsafeToRetry) setError("");
-        } catch (cause) {
-          report(cause);
-        } finally {
-          if (active) {
-            setBusy(false);
-            schedulePoll();
-          }
-        }
-      };
-      const retry = async () => {
+      const retry = async (confirmedHold?: Hold) => {
         if (!active || mutation || initialising) return;
         mutation = true;
         setBusy(true);
@@ -174,15 +171,60 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
           // Finish an earlier status read before changing the hold.
           if (inFlight) await inFlight.catch(() => {});
           if (!active) return;
-          await paymentApi.open(token, bookingId, controller.signal);
+          const before = await read();
           if (!active) return;
+          if (!canPay(before, Date.now())) {
+            if (!canResume(before, Date.now()))
+              throw new Error(
+                "Đơn hiện không thể tiếp tục thanh toán. Vui lòng kiểm tra trạng thái.",
+              );
+            await paymentApi.resume(
+              token,
+              bookingId,
+              confirmedHold
+                ? {
+                    expectedSeatHoldId: confirmedHold.seatHoldId,
+                    expectedVersion: confirmedHold.version,
+                  }
+                : undefined,
+              controller.signal,
+            );
+          }
+          if (!active) return;
+          setConfirmation(null);
           const data = await read();
           if (active) {
             setBlocked(false);
             await createLink(data);
           }
         } catch (cause) {
-          report(cause);
+          if (
+            active &&
+            cause instanceof ApiError &&
+            ["ACTIVE_HOLD_EXISTS", "SEAT_HOLD_VERSION_CONFLICT"].includes(
+              cause.code,
+            )
+          ) {
+            try {
+              const current = await bookingApi.current(token);
+              if (active && current && !current.bookingId) {
+                setConfirmation(current);
+                setError(
+                  "Bạn đang giữ lựa chọn khác. Tiếp tục đơn này sẽ thay lựa chọn đó bằng hành trình đã lưu. Thiếu ghế sẽ giữ nguyên lựa chọn hiện tại.",
+                );
+              } else if (active) {
+                setConfirmation(null);
+                setError(paymentMessage("HOLD_ATTACHED_TO_BOOKING"));
+              }
+            } catch (error) {
+              report(error);
+            }
+          } else {
+            setConfirmation(null);
+            report(cause);
+          }
+          // Refresh cutoff/reconciliation after a rejected mutation too.
+          if (active) await read().catch(() => {});
         } finally {
           mutation = false;
           if (active) {
@@ -209,7 +251,9 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
         if (active && foreground && !terminal)
           timer = setTimeout(() => void poll(), 5000);
       }
-      scope.current = { check, retry };
+      scope.current = { retry };
+      setSnapshot(null);
+      setConfirmation(null);
       setLoading(true);
       setError("");
       setBlocked(false);
@@ -217,7 +261,7 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
       void (async () => {
         try {
           const data = await read();
-          if (active && foreground) await createLink(data);
+          if (active && foreground && !returnOutcome) await createLink(data);
         } catch (cause) {
           report(cause);
         } finally {
@@ -243,13 +287,21 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
         listener.remove();
         scope.current = null;
       };
-    }, [token, bookingId]),
+    }, [token, bookingId, returnOutcome]),
   );
   const booking = snapshot?.data;
   const paid = !!booking && isBookingPaid(booking);
   const expired =
     !!booking && holdExpired(booking, snapshot!.receivedAt, clock);
   const reconciling = !!booking && needsReconciliation(booking);
+  const resumable =
+    !!booking && canResume(booking, snapshot!.receivedAt, clock);
+  const closed =
+    !!booking &&
+    (booking.bookingStatus === "CANCELLED" ||
+      (!!booking.bookingClosesAt &&
+        serverNow(booking, snapshot!.receivedAt, clock) >=
+          Date.parse(booking.bookingClosesAt)));
   const remaining = booking?.seatHold
     ? Math.max(
         0,
@@ -276,17 +328,6 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
       return null;
     }
   }, [qrPayload]);
-  const checkoutUrl = link?.paymentLink.checkoutUrl;
-  const openCheckout = async () => {
-    if (!payable || !checkoutUrl) return;
-    try {
-      if (new URL(checkoutUrl).protocol !== "https:")
-        throw new Error("Link thanh toán không hợp lệ.");
-      await Linking.openURL(checkoutUrl);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không mở được PayOS.");
-    }
-  };
   return (
     <Screen
       design
@@ -295,6 +336,13 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
       onBack={() => router.replace("/booking")}
     >
       {loading && <Notice>Đang lấy thông tin thanh toán…</Notice>}
+      {returnOutcome && !paid && (
+        <Notice>
+          {returnOutcome === "cancel"
+            ? "Bạn đã rời trang thanh toán. Đơn vẫn được lưu; đang kiểm tra trạng thái thanh toán."
+            : "Đang kiểm tra kết quả từ hệ thống. Khi thanh toán được xác nhận, app sẽ hiển thị vé của bạn."}
+        </Notice>
+      )}
       {booking && (
         <>
           <Row style={{ justifyContent: "space-between" }}>
@@ -303,11 +351,13 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
                 ? "Đã thanh toán"
                 : reconciling
                   ? "Cần đối soát"
-                  : expired
-                    ? "Hết hạn giữ chỗ"
-                    : "Chờ thanh toán"}
+                  : closed
+                    ? "Đã quá hạn đặt vé"
+                    : expired
+                      ? "Cần giữ chỗ lại"
+                      : "Chờ thanh toán"}
             </Label>
-            {!paid && !expired && !reconciling && (
+            {!paid && !expired && !closed && !reconciling && (
               <Label>
                 {Math.floor(remaining / 60)}:
                 {String(remaining % 60).padStart(2, "0")}
@@ -354,46 +404,23 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
                   />
                 ) : (
                   <Notice>
-                    Chưa hiển thị được QR. Bạn có thể mở trang thanh toán PayOS.
+                    Chưa hiển thị được QR. Vui lòng mở lại đơn để thử lại.
                   </Notice>
                 )}
                 <InfoRow
                   label="Nội dung chuyển khoản"
                   value={link!.paymentLink.description}
                 />
-                <Button
-                  title="Mở trang thanh toán PayOS"
-                  disabled={busy}
-                  onPress={() => void openCheckout()}
-                />
-                {Platform.OS === "web" && qr ? (
-                  <Button
-                    secondary
-                    title="Tải mã QR"
-                    onPress={() => {
-                      const a = document.createElement("a");
-                      a.href = qr;
-                      a.download = `skygo-${booking.bookingCode}.gif`;
-                      a.click();
-                    }}
-                  />
-                ) : (
-                  <Button
-                    secondary
-                    title="Chia sẻ link thanh toán"
-                    onPress={() =>
-                      void Share.share({
-                        message: checkoutUrl!,
-                        url: checkoutUrl,
-                      }).catch(() =>
-                        setError("Không chia sẻ được link thanh toán."),
-                      )
-                    }
+                {qr && (
+                  <SaveQrButton
+                    uri={qr}
+                    name={`skygo-${booking.bookingCode}`}
+                    disabled={busy}
                   />
                 )}
                 <Label size={12}>
-                  Quét QR bằng ứng dụng ngân hàng hoặc mở PayOS để thanh toán.
-                  Quay lại app để kiểm tra trạng thái.
+                  Quét QR bằng ứng dụng ngân hàng hoặc chọn ảnh PNG đã lưu. App
+                  tự cập nhật kết quả khi bạn quay lại.
                 </Label>
               </>
             )}
@@ -404,32 +431,59 @@ export default function LivePayosScreen({ bookingId }: { bookingId: string }) {
               toán thêm.
             </Notice>
           )}
-          {expired && !paid && !reconciling && (
+          {closed && !paid && !reconciling && (
+            <Notice error>
+              Đã quá thời hạn đặt vé. Đơn không thể tiếp tục thanh toán.
+            </Notice>
+          )}
+          {expired && !closed && !paid && !reconciling && (
             <Notice>
-              Thời gian giữ chỗ đã hết. Link cũ không còn được hiển thị. Chọn
-              tiếp tục để BE kiểm tra khả năng giữ lại chỗ.
+              Đơn cần giữ chỗ lại. Đơn và giá đã lưu vẫn được giữ nguyên. Chọn
+              tiếp tục để kiểm tra khả năng giữ lại chỗ.
             </Notice>
           )}
         </>
       )}
       {!!error && <Notice error>{error}</Notice>}
-      {!loading && (
-        <Button
-          title={paid ? "Xem vé" : "Kiểm tra trạng thái thanh toán"}
-          disabled={busy}
-          loading={busy}
-          onPress={() =>
-            paid ? router.replace("/booking") : void scope.current?.check()
-          }
-        />
+      {!loading && paid && (
+        <Button title="Xem vé" onPress={() => router.replace("/booking")} />
       )}
-      {!loading && !paid && !reconciling && !blocked && !payable && (
-        <Button
-          title="Tiếp tục thanh toán"
-          disabled={busy}
-          onPress={() => void scope.current?.retry()}
-        />
+      {confirmation && !loading && resumable && !blocked && (
+        <Panel>
+          <Label weight="bold">
+            Thay lựa chọn đang giữ bằng đơn {booking?.bookingCode}?
+          </Label>
+          <Button
+            title="Xác nhận tiếp tục đơn đã lưu"
+            disabled={busy}
+            onPress={() => void scope.current?.retry(confirmation)}
+          />
+          <Button
+            secondary
+            title="Giữ lựa chọn hiện tại"
+            disabled={busy}
+            onPress={() => {
+              setConfirmation(null);
+              setError("");
+            }}
+          />
+        </Panel>
       )}
+      {!confirmation &&
+        !loading &&
+        !paid &&
+        !reconciling &&
+        !blocked &&
+        !payable &&
+        !closed &&
+        (resumable ||
+          (!!booking && canPay(booking, snapshot!.receivedAt, clock))) && (
+          <Button
+            title="Tiếp tục thanh toán"
+            disabled={busy}
+            onPress={() => void scope.current?.retry()}
+          />
+        )}
       <Tap onPress={() => router.push("/help")}>
         <Label>Cần hỗ trợ? Liên hệ SkyGo</Label>
       </Tap>

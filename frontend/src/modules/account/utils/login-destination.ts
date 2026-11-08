@@ -9,6 +9,8 @@ const destinations = {
   booking: "/booking",
   success: "/success",
   bookings: "/bookings",
+  "payment/success": "/payment/success",
+  "payment/cancel": "/payment/cancel",
 } as const;
 
 export function loginDestination(returnTo?: string) {

@@ -4,21 +4,43 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const ts = require("typescript");
+global.__qrSavePlatform = { OS: "web", Version: 35 };
+global.__qrSaveMock = {};
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skygo-payment-"));
 for (const [source, target] of [
   ["shared/api/client", "client"],
   ["modules/payment/services/payment-service", "payment-service"],
+  ["modules/flights/services/home-service", "home-service"],
+  ["modules/tickets/services/booking-history", "booking-history"],
+  ["modules/tickets/services/booking-presentation", "booking-presentation"],
   ["modules/payment/services/payment-state", "payment-state"],
   ["modules/payment/services/known-bookings", "known-bookings"],
   ["modules/payment/services/qr-code", "qr-code"],
+  ["modules/payment/services/save-qr-image", "save-qr-image"],
 ]) {
   const sourceText = fs
     .readFileSync(path.join(__dirname, "../src", source + ".ts"), "utf8")
     .replace(
       'import { Platform } from "react-native";',
-      'const Platform = { OS: "ios" };',
+      "const Platform = global.__qrSavePlatform;",
     )
     .replace('"@/shared/api/client"', '"./client"')
+    .replaceAll('"@/modules/flights/services/home-service"', '"./home-service"')
+    .replaceAll(
+      '"@/modules/payment/services/payment-service"',
+      '"./payment-service"',
+    )
+    .replaceAll(
+      '"@/modules/payment/services/payment-state"',
+      '"./payment-state"',
+    )
+    .replaceAll(
+      '"@/modules/payment/services/known-bookings"',
+      '"./known-bookings"',
+    )
+    .replace('"expo-image-manipulator"', '"./image-manipulator"')
+    .replaceAll('"expo-media-library/legacy"', '"./media-library"')
+    .replaceAll('"expo-media-library"', '"./media-library"')
     .replace(
       '"qrcode-generator"',
       JSON.stringify(require.resolve("qrcode-generator")),
@@ -34,6 +56,21 @@ for (const [source, target] of [
     }).outputText,
   );
 }
+fs.writeFileSync(
+  path.join(dir, "image-manipulator.js"),
+  `
+exports.SaveFormat = { PNG: "png" };
+exports.ImageManipulator = { manipulate: (...args) => global.__qrSaveMock.manipulate(...args) };
+`,
+);
+fs.writeFileSync(
+  path.join(dir, "media-library.js"),
+  `
+exports.saveToLibraryAsync = (...args) => global.__qrSaveMock.save(...args);
+exports.requestPermissionsAsync = (...args) => global.__qrSaveMock.permission(...args);
+exports.Asset = {create: (...args) => global.__qrSaveMock.save(...args)};
+`,
+);
 const originalFetch = global.fetch;
 after(() => {
   global.fetch = originalFetch;
@@ -44,6 +81,7 @@ const {
   isBookingPaid,
   holdExpired,
   canPay,
+  canResume,
   linkMatchesBooking,
   serverNow,
   paymentMessage,
@@ -233,4 +271,277 @@ test("PayOS payload renders a real GIF locally with a quiet zone and preserves U
     ...Buffer.from("Thanh toán Đ", "utf8"),
   ]);
   assert.throws(() => paymentQrImage(""));
+});
+
+test("released holds require rehold; resume respects BE flag, reconciliation and exact cutoff", () => {
+  const saved = {
+    ...base,
+    bookingStatus: "AWAITING_REHOLD",
+    requiresRehold: true,
+    canResumePayment: true,
+    bookingClosesAt: "2026-11-07T06:00:00Z",
+    seatHold: { ...base.seatHold, status: "RELEASED" },
+  };
+  assert.equal(holdExpired(saved, 0, 0), true);
+  assert.equal(canPay(saved, 0, 0), false);
+  assert.equal(canResume(saved, 0, 0), true);
+  assert.equal(canResume(saved, 0, 3600000), false);
+  for (const change of [
+    { canResumePayment: false },
+    { bookingStatus: "CANCELLED" },
+    { payment: { status: "RECONCILIATION_REQUIRED" } },
+  ])
+    assert.equal(canResume({ ...saved, ...change }, 0, 0), false);
+  assert.equal(
+    canPay({ ...base, bookingClosesAt: base.serverTime }, 0, 0),
+    false,
+  );
+});
+
+test("resume sends confirmation ID/version only after explicit confirmation", async () => {
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return new Response(JSON.stringify({ data: {} }));
+  };
+  await paymentApi.resume("token", "saved/order");
+  await paymentApi.resume("token", "saved/order", {
+    expectedSeatHoldId: "browse-hold",
+    expectedVersion: 7,
+  });
+  assert.ok(calls[0].url.endsWith("/saved%2Forder/resume-payment"));
+  assert.equal(calls[0].body, undefined);
+  assert.deepEqual(JSON.parse(calls[1].body), {
+    expectedSeatHoldId: "browse-hold",
+    expectedVersion: 7,
+  });
+  assert.equal(calls[1].headers.Authorization, "Bearer token");
+});
+
+test("save QR encodes PNG, downloads a .png on web and saves converted URI to phone photos", async () => {
+  const { saveQrImage } = require(path.join(dir, "save-qr-image.js"));
+  const previousDocument = global.document;
+  const originalRevoke = URL.revokeObjectURL;
+  try {
+    for (const [os, version] of [
+      ["web", 35],
+      ["ios", 18],
+      ["android", 35],
+      ["android", 28],
+    ]) {
+      Object.assign(global.__qrSavePlatform, { OS: os, Version: version });
+      const calls = [];
+      global.__qrSaveMock = {
+        manipulate: (uri) => {
+          assert.equal(uri, "data:image/gif;base64,SOURCE");
+          return {
+            release: () => calls.push("release-context"),
+            renderAsync: async () => ({
+              release: () => calls.push("release-image"),
+              saveAsync: async (options) => {
+                assert.equal(options.format, "png");
+                assert.equal(options.base64, os === "web");
+                return {
+                  uri:
+                    os === "web" ? "blob:png-result" : "file:///cache/qr.png",
+                  base64: "PNG_BYTES",
+                };
+              },
+            }),
+          };
+        },
+        save: async (uri) => {
+          assert.equal(uri, "file:///cache/qr.png");
+          calls.push("saved");
+        },
+        permission: async (writeOnly, granular) => {
+          assert.equal(writeOnly, true);
+          assert.deepEqual(granular, []);
+          calls.push("permission");
+          return { granted: true };
+        },
+      };
+      const anchor = { click: () => calls.push("download"), remove: () => {} };
+      global.document = {
+        createElement: () => anchor,
+        body: { appendChild: () => {} },
+      };
+      URL.revokeObjectURL = () => {};
+      await saveQrImage("data:image/gif;base64,SOURCE", "skygo-ABC123");
+      if (os === "web") {
+        assert.equal(anchor.download, "skygo-ABC123.png");
+        assert.equal(anchor.href, "data:image/png;base64,PNG_BYTES");
+        assert.ok(calls.includes("download"));
+      } else assert.ok(calls.includes("saved"));
+      assert.equal(
+        calls.includes("permission"),
+        os === "android" && version < 29,
+      );
+      assert.ok(calls.includes("release-context"));
+      assert.ok(calls.includes("release-image"));
+    }
+  } finally {
+    global.document = previousDocument;
+    URL.revokeObjectURL = originalRevoke;
+    global.__qrSavePlatform.OS = "web";
+  }
+});
+
+test("denied photo permission never reports a save; render errors still release the context", async () => {
+  const { saveQrImage } = require(path.join(dir, "save-qr-image.js"));
+  Object.assign(global.__qrSavePlatform, { OS: "android", Version: 28 });
+  let released = 0;
+  let saves = 0;
+  global.__qrSaveMock = {
+    manipulate: () => ({
+      release: () => released++,
+      renderAsync: async () => ({
+        release: () => released++,
+        saveAsync: async () => ({ uri: "file:///qr.png" }),
+      }),
+    }),
+    permission: async () => ({ granted: false }),
+    save: async () => saves++,
+  };
+  await assert.rejects(saveQrImage("source", "qr"), /cho phép SkyGo lưu ảnh/);
+  assert.equal(saves, 0);
+  assert.equal(released, 2);
+  global.__qrSaveMock.manipulate = () => ({
+    release: () => released++,
+    renderAsync: async () => {
+      throw Error("bad image");
+    },
+  });
+  await assert.rejects(saveQrImage("bad", "qr"), /bad image/);
+  assert.equal(released, 3);
+  global.__qrSavePlatform.OS = "web";
+});
+
+test("booking labels keep pending, rehold, closed and reconciliation distinct from confirmed tickets", () => {
+  const { bookingPresentation, flightDate } = require(
+    path.join(dir, "booking-presentation.js"),
+  );
+  assert.equal(bookingPresentation(base, 0, 0).key, "pending");
+  assert.equal(
+    bookingPresentation({ ...base, bookingStatus: "PAID" }, 0, 0).key,
+    "confirming",
+  );
+  assert.equal(
+    bookingPresentation(
+      { ...base, bookingStatus: "PAID", payment: { status: "SUCCEEDED" } },
+      0,
+      0,
+    ).key,
+    "paid",
+  );
+  assert.equal(
+    bookingPresentation(
+      { ...base, bookingStatus: "AWAITING_REHOLD", requiresRehold: true },
+      0,
+      0,
+    ).key,
+    "rehold",
+  );
+  assert.equal(
+    bookingPresentation({ ...base, bookingStatus: "CANCELLED" }, 0, 0).key,
+    "cancelled",
+  );
+  assert.equal(
+    bookingPresentation({ ...base, bookingClosesAt: base.serverTime }, 0, 0)
+      .key,
+    "closed",
+  );
+  assert.equal(
+    bookingPresentation(
+      { ...base, payment: { status: "RECONCILIATION_REQUIRED" } },
+      0,
+      0,
+    ).key,
+    "reconciliation",
+  );
+  assert.equal(flightDate("2026-11-09T00:30:00+14:00"), "09/11/2026");
+});
+
+test("history recovers upcoming booking on a new device and reads its authenticated details", async () => {
+  const { loadBookingHistory } = require(path.join(dir, "booking-history.js"));
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    assert.equal(options.headers.Authorization, "Bearer token");
+    return new Response(
+      JSON.stringify({
+        data: url.endsWith("/home")
+          ? { upcomingFlight: { bookingId: "from-home" } }
+          : {
+              ...base,
+              bookingId: "from-home",
+              createdAt: "2026-11-08T10:00:00Z",
+            },
+      }),
+    );
+  };
+  const result = await loadBookingHistory("token", "owner-a", storage);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].data.bookingId, "from-home");
+  assert.equal(result.failed, false);
+  assert.ok(calls[1].url.endsWith("/bookings/from-home"));
+  assert.deepEqual(
+    require(path.join(dir, "known-bookings.js")).knownBookingIds(
+      "owner-a",
+      storage,
+    ),
+    ["from-home"],
+  );
+  assert.deepEqual(
+    require(path.join(dir, "known-bookings.js")).knownBookingIds(
+      "owner-b",
+      storage,
+    ),
+    [],
+  );
+});
+
+test("partial history errors preserve loaded orders and show a retry state", async () => {
+  const { loadBookingHistory } = require(path.join(dir, "booking-history.js"));
+  const storage = {
+    getItem: () => '["good","unavailable"]',
+    setItem: () => {},
+  };
+  global.fetch = async (url) => {
+    if (url.endsWith("/home")) throw new TypeError("home unavailable");
+    if (url.endsWith("/unavailable"))
+      return new Response(
+        JSON.stringify({
+          error: { code: "HTTP_ERROR", message: "Unavailable" },
+        }),
+        { status: 503 },
+      );
+    return new Response(
+      JSON.stringify({
+        data: { ...base, bookingId: "good", createdAt: base.serverTime },
+      }),
+    );
+  };
+  const result = await loadBookingHistory("token", "owner", storage);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].data.bookingId, "good");
+  assert.equal(result.failed, true);
+});
+
+test("history on a new device reports network failure instead of an empty account", async () => {
+  const { loadBookingHistory } = require(path.join(dir, "booking-history.js"));
+  global.fetch = async () => {
+    throw new TypeError("offline");
+  };
+  const result = await loadBookingHistory("token", "new-owner", {
+    getItem: () => null,
+    setItem: () => {},
+  });
+  assert.equal(result.items.length, 0);
+  assert.equal(result.failed, true);
 });

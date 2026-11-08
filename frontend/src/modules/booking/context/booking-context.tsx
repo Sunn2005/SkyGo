@@ -1,13 +1,17 @@
+import {
+  createLiveSelection,
+  HoldConfirmationRequired,
+  type HoldConfirmation,
+} from "../services/live-selection";
 import { rememberBookingId } from "@/modules/payment/services/known-bookings";
 import type { BookingDetail } from "@/modules/payment/services/payment-service";
 import { useAccount } from "@/modules/account/context/account-context";
 import { ApiError } from "@/shared/api/client";
 import {
   bookingApi,
-  tripType,
-  passengerCounts,
   quoteRequest,
   passengerRequest,
+  type Hold,
   type Review,
   type CreatedBooking,
 } from "../data/api-booking-service";
@@ -34,6 +38,20 @@ import { quote, flightPrice, isDomestic } from "../services/booking-rules";
 import { bookingService } from "../data/booking-service";
 import type { PaymentOutcome } from "@/modules/payment/types";
 
+function liveReservation(
+  hold: Hold,
+  owner: string,
+  search: Search,
+): Reservation {
+  return {
+    id: hold.seatHoldId,
+    owner,
+    expiresAt: Date.parse(hold.expiresAt),
+    keys: [],
+    count: search.count + (search.children ?? 0),
+    serverNow: Date.now(),
+  };
+}
 type AccountContact = { email?: string | null; phoneNumber?: string };
 function useBookingState(accountId: string, accountContact: AccountContact) {
   const { session } = useAccount();
@@ -62,6 +80,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
   } | null>(null);
   const [quotedTotal, setQuotedTotal] = useState<number | null>(null);
   const liveBusy = useRef(false);
+  const selectionManager = useRef(createLiveSelection());
   const ownerRef = useRef(accountId);
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const reservationRef = useRef<Reservation | null>(null);
@@ -82,7 +101,13 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     setReservation(null);
     setWarningDismissed(false);
   };
-  const selectFlight = async (flight: Flight, selectionIndex = legIndex) => {
+  const selectFlight = async (
+    flight: Flight,
+    selectionIndex = legIndex,
+    confirmation?: HoldConfirmation,
+    selectionSearch?: Search,
+  ) => {
+    const activeSearch = selectionSearch ?? search;
     if (flight.source === "api") {
       if (liveBusy.current)
         throw new Error("Đang xử lý lựa chọn. Vui lòng chờ.");
@@ -92,64 +117,90 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
         const index = selectionIndex;
         if (index > 0 && !selected[0])
           throw new Error("Vui lòng chọn chuyến đi trước.");
-        const next = selected.slice();
+        const next = index === 0 ? [] : selected.slice(0, 1);
         next[index] = flight;
-        let hold = await bookingApi.current(accessToken);
-        checkSession();
-        if (hold && (hold.bookingId || hold.tripType !== tripType(search)))
-          throw new Error(
-            "Bạn còn lượt giữ chỗ khác. Vui lòng chờ lượt giữ chỗ hết hạn trước khi đổi loại hành trình.",
-          );
-        if (!hold) {
-          if (index !== 0) throw new Error("Vui lòng chọn chuyến đi trước.");
-          hold = await bookingApi.hold(accessToken, search, flight);
-        } else {
-          if (
-            JSON.stringify(hold.passengerCounts) !==
-            JSON.stringify(passengerCounts(search))
-          )
-            hold = await bookingApi.counts(
-              accessToken,
-              hold.seatHoldId,
-              search,
-            );
-          hold = await bookingApi.leg(
-            accessToken,
-            hold.seatHoldId,
-            search,
-            flight,
-            index,
-          );
-        }
+        const hold = await selectionManager.current.select(
+          accessToken,
+          activeSearch,
+          next,
+          checkSession,
+          confirmation,
+        );
         checkSession();
         if (searchRef.current !== JSON.stringify(search))
           throw new Error("Tìm kiếm đã thay đổi. Vui lòng chọn lại chuyến.");
-        const reservation = {
-          id: hold.seatHoldId,
-          owner: accountId,
-          expiresAt: Date.parse(hold.expiresAt),
-          keys: [],
-          count: search.count + (search.children ?? 0),
-          serverNow: Date.now(),
-        };
+        if (confirmation?.bookingId)
+          rememberBookingId(accountId, confirmation.bookingId, localStorage);
+        const reservation = liveReservation(hold, accountId, activeSearch);
         reservationRef.current = reservation;
         setReservation(reservation);
-        setNow(Date.now());
+        setNow(reservation.serverNow);
+        setSearch(activeSearch);
         setSelected(next);
         setReview(null);
         setCreatedBooking(null);
+        setLivePayment(null);
         setQuotedTotal(null);
         setPassengersConfirmed(false);
         setWarningDismissed(false);
-        if (next.filter(Boolean).length === legs.length) {
+        if (
+          next.filter(Boolean).length ===
+          (activeSearch.type === "one-way" ? 1 : 2)
+        ) {
           const quote = await bookingApi.quote(
             accessToken,
-            quoteRequest(hold.seatHoldId, search, next),
+            quoteRequest(hold.seatHoldId, activeSearch, next),
           );
           checkSession();
+          if (
+            searchRef.current !== JSON.stringify(activeSearch) &&
+            searchRef.current !== JSON.stringify(search)
+          )
+            throw new Error("Tìm kiếm đã thay đổi. Vui lòng chọn lại chuyến.");
           setQuotedTotal(quote.totalAmount);
         }
         return;
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          [
+            "SEAT_HOLD_EXPIRED",
+            "INSUFFICIENT_CAPACITY",
+            "BOOKING_WINDOW_CLOSED",
+          ].includes(error.code)
+        ) {
+          const current = await bookingApi.current(accessToken);
+          checkSession();
+          if (
+            reservationRef.current &&
+            current?.seatHoldId !== reservationRef.current.id
+          ) {
+            reservationRef.current = null;
+            setReservation(null);
+            setReview(null);
+            setCreatedBooking(null);
+            setQuotedTotal(null);
+            setSelected([]);
+            setPassengersConfirmed(false);
+          }
+        }
+        if (
+          error instanceof ApiError &&
+          error.code === "SEAT_HOLD_VERSION_CONFLICT"
+        ) {
+          const current = await bookingApi.current(accessToken);
+          checkSession();
+          setReview(null);
+          setQuotedTotal(null);
+          setPassengersConfirmed(false);
+          if (current)
+            throw new HoldConfirmationRequired(
+              current,
+              `Lựa chọn đã thay đổi trên phiên khác. Vui lòng kiểm tra và xác nhận lại.${current.bookingId ? " Xác nhận sẽ đóng QR cũ; đơn cũ vẫn được lưu." : ""}`,
+            );
+          throw new Error("Giữ chỗ đã hết hạn. Vui lòng chọn lại chuyến đi.");
+        }
+        throw error;
       } finally {
         liveBusy.current = false;
       }
@@ -196,6 +247,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     flight: Flight;
     index: number;
     searchKey: string;
+    selectionSearch?: Search;
   } | null>(null);
   const [email, setEmail] = useState(accountContact.email ?? "");
   const [phone, setPhone] = useState(accountContact.phoneNumber ?? "");
@@ -585,6 +637,20 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     acceptPaymentDetail: (detail: BookingDetail) => {
       checkSession();
       rememberBookingId(accountId, detail.bookingId, localStorage);
+      if (
+        detail.seatHold?.status === "ACTIVE" &&
+        !detail.seatHold.expired &&
+        reservationRef.current &&
+        detail.seatHold.seatHoldId !== reservationRef.current.id
+      ) {
+        reservationRef.current = null;
+        setReservation(null);
+        setReview(null);
+        setCreatedBooking(null);
+        setQuotedTotal(null);
+        setSelected([]);
+        setPassengersConfirmed(false);
+      }
       setLivePayment((current) =>
         current?.id === detail.bookingId && current.token === token
           ? { ...current, detail, receivedAt: Date.now() }

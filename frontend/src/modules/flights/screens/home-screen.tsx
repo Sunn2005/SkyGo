@@ -80,6 +80,7 @@ export default function HomeScreen() {
           departure: data.upcomingFlight.departureAt.slice(11, 16),
           arrival: data.upcomingFlight.arrivalAt.slice(11, 16),
         },
+        bookingId: data.upcomingFlight.bookingId,
         bookingCode: data.upcomingFlight.bookingCode,
         originCity: data.upcomingFlight.origin.city,
         destinationCity: data.upcomingFlight.destination.city,
@@ -152,83 +153,102 @@ export default function HomeScreen() {
           <Label size={20} weight="bold" color={ink}>
             Chuyến bay sắp tới
           </Label>
-          <View style={[styles.card, styles.upcoming]}>
-            {upcoming ? (
-              <>
-                <View style={styles.confirmed}>
-                  <Label size={12} color="#17632C" weight="semibold">
-                    ✓ Đã xác nhận
+          {upcoming ? (
+            <Tap
+              label={`Xem chi tiết đặt chỗ ${upcoming.bookingCode}`}
+              onPress={() => {
+                b.selectPaymentBooking(upcoming.bookingId);
+                router.push("/booking");
+              }}
+              style={[styles.card, styles.upcoming]}
+            >
+              <View style={styles.confirmed}>
+                <Label size={12} color="#17632C" weight="semibold">
+                  ✓ Đã xác nhận
+                </Label>
+              </View>
+              <Row style={{ gap: 12, alignItems: "center" }}>
+                <View>
+                  <Label size={29} weight="bold" color={ink}>
+                    {upcoming.leg.from}
+                  </Label>
+                  <Label size={14} color={muted}>
+                    {upcoming.originCity}
                   </Label>
                 </View>
-                <Row style={{ gap: 12, alignItems: "center" }}>
-                  <View>
-                    <Label size={29} weight="bold" color={ink}>
-                      {upcoming.leg.from}
-                    </Label>
-                    <Label size={14} color={muted}>
-                      {upcoming.originCity}
-                    </Label>
+                <Row style={{ flex: 1, gap: 4 }}>
+                  <View style={styles.flightLine} />
+                  <View style={{ transform: [{ rotate: "45deg" }] }}>
+                    <Icon name="home-design-imgPlane" size={24} />
                   </View>
-                  <Row style={{ flex: 1, gap: 4 }}>
-                    <View style={styles.flightLine} />
-                    <View style={{ transform: [{ rotate: "45deg" }] }}>
-                      <Icon name="home-design-imgPlane" size={24} />
-                    </View>
-                    <View style={styles.flightLine} />
-                  </Row>
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Label size={29} weight="bold" color={ink}>
-                      {upcoming.leg.to}
-                    </Label>
-                    <Label size={14} color={muted}>
-                      {upcoming.destinationCity}
-                    </Label>
-                  </View>
+                  <View style={styles.flightLine} />
                 </Row>
-                <Row style={{ gap: 8, flexWrap: "wrap" }}>
-                  <HomeIcon name="calendar" size={17} color={muted} />
-                  <Label size={12}>{shortDate(upcoming.leg.date)}</Label>
-                  <View
-                    style={{
-                      width: 1,
-                      height: 16,
-                      backgroundColor: "#D2DCE2",
-                      marginHorizontal: 3,
-                    }}
-                  />
-                  <HomeIcon name="clock" size={17} color={muted} />
-                  <Label size={12}>
-                    {upcoming.flight.departure} – {upcoming.flight.arrival}
+                <View style={{ alignItems: "flex-end" }}>
+                  <Label size={29} weight="bold" color={ink}>
+                    {upcoming.leg.to}
                   </Label>
-                  <Label size={12}>Mã đặt chỗ: {upcoming.bookingCode}</Label>
-                </Row>
-              </>
-            ) : (
-              <>
-                <Label size={16} weight="semibold">
-                  {loading
-                    ? "Đang tải chuyến bay…"
-                    : "Hành trình tiếp theo đang chờ bạn"}
+                  <Label size={14} color={muted}>
+                    {upcoming.destinationCity}
+                  </Label>
+                </View>
+              </Row>
+              <Row style={{ gap: 8, flexWrap: "wrap" }}>
+                <HomeIcon name="calendar" size={17} color={muted} />
+                <Label size={12}>{shortDate(upcoming.leg.date)}</Label>
+                <View
+                  style={{
+                    width: 1,
+                    height: 16,
+                    backgroundColor: "#D2DCE2",
+                    marginHorizontal: 3,
+                  }}
+                />
+                <HomeIcon name="clock" size={17} color={muted} />
+                <Label size={12}>
+                  {upcoming.flight.departure} – {upcoming.flight.arrival}
                 </Label>
-                <Label size={13} color={muted}>
-                  {error || "Chuyến bay đã xác nhận sẽ xuất hiện tại đây."}
+                <Label size={12}>Mã đặt chỗ: {upcoming.bookingCode}</Label>
+              </Row>
+              <Row
+                style={{
+                  justifyContent: "space-between",
+                  paddingTop: 10,
+                  marginTop: 6,
+                  borderTopWidth: 1,
+                  borderTopColor: "#E8EFF2",
+                }}
+              >
+                <Label size={12} weight="semibold" color={teal}>
+                  Xem chi tiết và vé
                 </Label>
-                {error ? (
-                  <Button
-                    secondary
-                    title="Tải lại"
-                    onPress={() => setReload((value) => value + 1)}
-                  />
-                ) : (
-                  <Tap onPress={() => router.push("/search")}>
-                    <Label color={teal} size={14} weight="semibold">
-                      Khám phá chuyến bay →
-                    </Label>
-                  </Tap>
-                )}
-              </>
-            )}
-          </View>
+                <HomeIcon name="arrow" color={teal} size={18} />
+              </Row>
+            </Tap>
+          ) : (
+            <View style={[styles.card, styles.upcoming]}>
+              <Label size={16} weight="semibold">
+                {loading
+                  ? "Đang tải chuyến bay…"
+                  : "Hành trình tiếp theo đang chờ bạn"}
+              </Label>
+              <Label size={13} color={muted}>
+                {error || "Chuyến bay đã xác nhận sẽ xuất hiện tại đây."}
+              </Label>
+              {error ? (
+                <Button
+                  secondary
+                  title="Tải lại"
+                  onPress={() => setReload((value) => value + 1)}
+                />
+              ) : (
+                <Tap onPress={() => router.push("/search")}>
+                  <Label color={teal} size={14} weight="semibold">
+                    Khám phá chuyến bay →
+                  </Label>
+                </Tap>
+              )}
+            </View>
+          )}
           {!!error && <Notice error>{error}</Notice>}
         </View>
         <View style={styles.section}>
@@ -400,7 +420,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     boxShadow: "0 2px 5px rgba(16,42,67,0.05)",
   },
-  upcoming: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 5, gap: 5 },
+  upcoming: { padding: 16, gap: 8 },
   confirmed: {
     alignSelf: "flex-start",
     backgroundColor: "#E2F6EB",

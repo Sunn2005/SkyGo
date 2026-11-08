@@ -3,7 +3,7 @@ import { Host, Picker, Switch } from "@expo/ui";
 import { router } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import { ActionBar } from "@/modules/booking/components/action-bar";
-import { Label, Tap } from "@/shared/components/ui";
+import { Label } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { money } from "@/shared/utils/format";
 import { colors as c } from "@/shared/theme";
@@ -63,18 +63,7 @@ export default function FiltersScreen() {
           onValueChange={setMorning}
         />
       </Host>
-      <Tap
-        onPress={() => {
-          setAirline("all");
-          setNonstop(false);
-          setMorning(false);
-          setMaxPrice(10000000);
-        }}
-      >
-        <Label color={c.primary} weight="semibold">
-          Đặt lại bộ lọc
-        </Label>
-      </Tap>
+
     </Screen>
   );
 }

@@ -7,6 +7,11 @@ import com.skygo.backend.booking.contract.BookingOpenResponse;
 import com.skygo.backend.booking.contract.PaymentLinkResponse;
 import com.skygo.backend.booking.service.PaymentLinkService;
 import com.skygo.backend.booking.service.ResumePaymentService;
+import com.skygo.backend.booking.service.BookingHoldSwitchService;
+import com.skygo.backend.booking.contract.BookingHoldSwitchRequest;
+import com.skygo.backend.booking.contract.BookingHoldSwitchResponse;
+import com.skygo.backend.booking.contract.ResumePaymentRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +20,18 @@ import org.springframework.web.bind.annotation.*;
 public class BookingPaymentController {
   private final ResumePaymentService service;
   private final PaymentLinkService paymentLinks;
-  public BookingPaymentController(ResumePaymentService service, PaymentLinkService paymentLinks) {
+  private final BookingHoldSwitchService switches;
+  public BookingPaymentController(ResumePaymentService service, PaymentLinkService paymentLinks,BookingHoldSwitchService switches) {
     this.service = service;
     this.paymentLinks = paymentLinks;
+    this.switches=switches;
+  }
+  @PostMapping("/api/v1/bookings/{bookingId}/switch-hold")
+  public ResponseEntity<DataResponse<BookingHoldSwitchResponse>> switchHold(
+      @AuthenticationPrincipal AuthSession session,@PathVariable String bookingId,
+      @RequestHeader(value="Idempotency-Key",required=false) String key,@Valid @RequestBody BookingHoldSwitchRequest request) {
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+        .body(new DataResponse<>(switches.switchHold(session.user().id(),bookingId,key,request)));
   }
 
   @PostMapping("/api/v1/bookings/{bookingId}/payment-link")
@@ -36,7 +50,7 @@ public class BookingPaymentController {
 
   @PostMapping("/api/v1/bookings/{bookingId}/resume-payment")
   public DataResponse<ResumePaymentResponse> resume(@AuthenticationPrincipal AuthSession session,
-      @PathVariable String bookingId) {
-    return new DataResponse<>(service.resume(session.user().id(), bookingId));
+      @PathVariable String bookingId,@Valid @RequestBody(required=false) ResumePaymentRequest request) {
+    return new DataResponse<>(service.resume(session.user().id(), bookingId,request));
   }
 }

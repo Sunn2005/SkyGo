@@ -22,10 +22,11 @@ public class PaymentWebhookService {
   private final SeatHoldRepository holds;
   private final BookingRepository bookings;
   private final Clock clock;
+  private final BookingDeadlineService deadlines;
 
   public PaymentWebhookService(PayosWebhookVerifier verifier, PaymentWebhookRepository records,
       PaymentAttemptRepository attempts, SeatHoldService holdsService,
-      SeatHoldRepository holds, BookingRepository bookings, Clock clock) {
+      SeatHoldRepository holds, BookingRepository bookings, Clock clock,BookingDeadlineService deadlines) {
     this.verifier = verifier;
     this.records = records;
     this.attempts = attempts;
@@ -33,6 +34,7 @@ public class PaymentWebhookService {
     this.holds = holds;
     this.bookings = bookings;
     this.clock = clock;
+    this.deadlines=deadlines;
   }
 
   public void receive(JsonNode payload) {
@@ -71,6 +73,11 @@ public class PaymentWebhookService {
             "Payment link is still being persisted");
       records.record(attempt.id(), transfer);
       var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+      if(deadlines.cancelIfClosed(booking,now)) {
+        records.reconcilePending(attempt.id(),"BOOKING_WINDOW_CLOSED");
+        records.reconcilePayment(booking.id());
+        return Outcome.ok(null);
+      }
       if (!transfer.paymentLinkId().equals(attempt.paymentLinkId())
           || !transfer.currency().equals(attempt.currency())
           || !transfer.currency().equals(booking.currency())) {

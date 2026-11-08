@@ -186,6 +186,7 @@ abstract class BookingFixture {
   @AfterEach
   void cleanup() {
     for(long owner:users) {
+      jdbc.update("DELETE FROM booking_hold_switch WHERE user_id=?",owner);
       jdbc.update("DELETE x FROM payment_transaction x JOIN payment_attempt a ON a.id=x.payment_attempt_id JOIN booking b ON b.id=a.booking_id WHERE b.user_id=?",owner);
       jdbc.update("DELETE a FROM payment_attempt a JOIN booking b ON b.id=a.booking_id WHERE b.user_id=?",owner);
       jdbc.update("UPDATE seat_hold SET booking_id=NULL WHERE user_id=?",owner);

@@ -33,6 +33,6 @@ class SeatHoldServiceTest {
   }
   Fare fare(String from,String to,String departure) {
     Instant dep=Instant.parse(departure);
-    return new Fare(1,"f","ECONOMY",from,from,"UTC",to,to,"UTC",dep,dep.plusSeconds(3600),true);
+    return new Fare(1,"f","ECONOMY",from,from,"UTC",to,to,"UTC",dep,dep.plusSeconds(3600),true,dep);
   }
 }

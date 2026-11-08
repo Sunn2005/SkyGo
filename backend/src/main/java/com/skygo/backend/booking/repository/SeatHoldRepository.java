@@ -21,10 +21,15 @@ public class SeatHoldRepository {
     jdbc.queryForObject("SELECT id FROM app_user WHERE id = ? FOR UPDATE", Long.class, user);
   }
   public Optional<SeatHold> active(long user) {
-    return load("SELECT * FROM seat_hold WHERE active_user_id = ? FOR UPDATE", user);
+    // The caller owns the account lock. Resolve via the unique index without locking it,
+    // then lock the PK. Locking the active-user secondary record can deadlock with a
+    // different customer's replacement INSERT while both compete for the same fare.
+    var ids=jdbc.queryForList("SELECT id FROM seat_hold WHERE active_user_id=?",Long.class,user);
+    return ids.isEmpty()?Optional.empty():byId(ids.getFirst()).filter(h->h.status().equals("ACTIVE"));
   }
   public Optional<SeatHold> owned(String publicId, long user) {
-    return load("SELECT * FROM seat_hold WHERE public_id = ? AND user_id = ? FOR UPDATE", publicId, user);
+    var ids=jdbc.queryForList("SELECT id FROM seat_hold WHERE public_id=? AND user_id=?",Long.class,publicId,user);
+    return ids.isEmpty()?Optional.empty():byId(ids.getFirst()).filter(h->h.userId()==user);
   }
   public Optional<SeatHold> byId(long id) {
     return load("SELECT * FROM seat_hold WHERE id = ? FOR UPDATE", id);
@@ -93,6 +98,12 @@ public class SeatHoldRepository {
         UPDATE seat_hold SET status='EXPIRED',released_at_utc=?,updated_at_utc=?
         WHERE id=? AND status='ACTIVE' AND expires_at_utc<=?
         """, utc(now), utc(now), hold, utc(now)) == 1;
+  }
+  public boolean release(long hold, Instant now) {
+    return jdbc.update("""
+        UPDATE seat_hold SET status='RELEASED',released_at_utc=?,updated_at_utc=?
+        WHERE id=? AND status='ACTIVE'
+        """,utc(now),utc(now),hold)==1;
   }
   public record Due(long id, long userId) {}
   public List<Due> due(Instant now, int limit) {

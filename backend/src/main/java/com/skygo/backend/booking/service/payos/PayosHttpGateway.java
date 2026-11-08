@@ -60,7 +60,7 @@ public class PayosHttpGateway implements PayosGateway {
           .header("x-client-id",clientId).header("x-api-key",apiKey)
           .header("User-Agent","SkyGoBackend/1.0").header("Accept","application/json");
       if (cancel) builder.header("Content-Type","application/json").POST(
-          HttpRequest.BodyPublishers.ofString("{\"cancellationReason\":\"Seat hold expired\"}"));
+          HttpRequest.BodyPublishers.ofString("{\"cancellationReason\":\"Seat hold released or expired\"}"));
       else builder.GET();
       var response = http.send(builder.build(),HttpResponse.BodyHandlers.ofString());
       if (response.statusCode()!=200) throw new Failure(false,null);

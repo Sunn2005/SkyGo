@@ -27,6 +27,7 @@ public class BookingDetailService {
     var b = snapshots.load(id,null);
     var hold = repository.latestHold(id);
     var invoice = repository.invoice(id);
+    var lifecycle=repository.lifecycle(id);
     var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
     var passengers = b.passengers().stream().map(p -> new Passenger(p.passengerId(),
         p.clientPassengerId(),p.passengerType(),p.title(),p.givenNames(),p.surname(),
@@ -39,6 +40,12 @@ public class BookingDetailService {
         hold == null ? null : new Hold(hold.publicId(),hold.status(),hold.expiresAt(),
             hold.status().equals("EXPIRED") || (hold.status().equals("ACTIVE")
                 && !now.isBefore(hold.expiresAt()))),
-        b.price(),b.currency(),b.payment(),b.legs(),passengers,invoice);
+        b.price(),b.currency(),b.payment(),b.legs(),passengers,invoice,
+        !java.util.Set.of("PAID","CANCELLED").contains(b.bookingStatus())
+            && (hold==null || !hold.status().equals("ACTIVE") || !now.isBefore(hold.expiresAt())),
+        !java.util.Set.of("PAID","CANCELLED").contains(b.bookingStatus())
+            && !java.util.Set.of("SUCCEEDED","RECONCILIATION_REQUIRED").contains(b.payment().status())
+            && lifecycle.closesAt()!=null && now.isBefore(lifecycle.closesAt()),
+        lifecycle.closesAt(),lifecycle.cancelledAt(),lifecycle.reason());
   }
 }

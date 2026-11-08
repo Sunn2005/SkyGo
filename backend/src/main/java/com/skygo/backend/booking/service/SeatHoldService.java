@@ -21,15 +21,18 @@ public class SeatHoldService {
   private final BookingRepository bookings;
   private final SeatHoldExpiryService expiry;
   private final Clock clock;
+  private final BookingHoldSwitchRepository switches;
   private final TransactionTemplate tx;
 
   public SeatHoldService(SeatHoldRepository holds, FlightInventoryRepository inventory,
-      BookingRepository bookings, SeatHoldExpiryService expiry, Clock clock, PlatformTransactionManager manager) {
+      BookingRepository bookings, SeatHoldExpiryService expiry, Clock clock, PlatformTransactionManager manager,
+      BookingHoldSwitchRepository switches) {
     this.holds = holds;
     this.inventory = inventory;
     this.bookings = bookings;
     this.expiry = expiry;
     this.clock = clock;
+    this.switches=switches;
     tx = new TransactionTemplate(manager);
     tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
   }
@@ -64,6 +67,7 @@ public class SeatHoldService {
     if (request.selection().direction() != Direction.OUTBOUND)
       throw BookingException.invalid("selection.direction", "Lượt giữ chỗ phải bắt đầu bằng chiều đi.");
     return withUser(user, () -> {
+      switches.assertIdle(user);
       holds.active(user).ifPresent(h -> { throw activeConflict(h); });
       var selected = selected(request.selection().flightId(), request.selection().cabinClass());
       inventory.lock(List.of(selected.id()));
@@ -89,6 +93,7 @@ public class SeatHoldService {
     if (request.tripType() == TripType.ONE_WAY && requested.containsKey(Direction.RETURN))
       throw BookingException.invalid("selections", "Hành trình một chiều không có chiều về.");
     try { return withUser(user, () -> {
+      switches.assertIdle(user);
       var hold = editable(user, holdId);
       if (hold.version() != request.expectedVersion()) throw versionConflict();
       var proposed = new EnumMap<Direction, Fare>(Direction.class);
@@ -144,6 +149,7 @@ public class SeatHoldService {
     try { direction = Direction.valueOf(directionValue); }
     catch (IllegalArgumentException ex) { throw BookingException.invalid("direction", "Chiều bay không hợp lệ."); }
     return withUser(user, () -> {
+      switches.assertIdle(user);
       var hold = editable(user, holdId);
       if (direction == Direction.RETURN && hold.tripType() != TripType.ROUND_TRIP)
         throw BookingException.invalid("direction", "Hành trình một chiều không có chiều về.");
@@ -172,6 +178,7 @@ public class SeatHoldService {
 
   public SeatHoldResponse counts(long user, String holdId, PassengerCountsRequest request) {
     return withUser(user, () -> {
+      switches.assertIdle(user);
       var hold = editable(user, holdId);
       inventory.lock(hold.legs().stream().map(Leg::fareId).toList());
       if (expiry.expireLocked(hold)) return Outcome.failed(expired());
@@ -227,7 +234,7 @@ public class SeatHoldService {
   }
   Instant now() { return clock.instant().truncatedTo(ChronoUnit.MICROS); }
 
-  private SeatHoldResponse response(SeatHold h) {
+  SeatHoldResponse response(SeatHold h) {
     var legs = h.legs().stream().map(leg -> {
       var f = inventory.fare(leg.fareId());
       return new SeatHoldResponse.Leg(leg.direction().name(), f.flightId(), f.cabin(),

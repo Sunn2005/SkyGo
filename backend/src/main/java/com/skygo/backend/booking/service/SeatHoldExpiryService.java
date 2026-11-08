@@ -15,16 +15,18 @@ public class SeatHoldExpiryService {
   private final FlightInventoryRepository inventory;
   private final BookingRepository bookings;
   private final Clock clock;
+  private final BookingDeadlineService deadlines;
   private final int batchSize;
   private final TransactionTemplate tx;
 
   public SeatHoldExpiryService(SeatHoldRepository holds, FlightInventoryRepository inventory,
       BookingRepository bookings, Clock clock, PlatformTransactionManager manager,
-      @Value("${skygo.seat-hold.cleanup-batch-size:100}") int batchSize) {
+      @Value("${skygo.seat-hold.cleanup-batch-size:100}") int batchSize,BookingDeadlineService deadlines) {
     this.holds = holds;
     this.inventory = inventory;
     this.bookings = bookings;
     this.clock = clock;
+    this.deadlines=deadlines;
     if (batchSize < 1) throw new IllegalArgumentException("cleanup-batch-size must be positive");
     this.batchSize = batchSize;
     tx = new TransactionTemplate(manager);
@@ -59,7 +61,10 @@ public class SeatHoldExpiryService {
     if (!holds.expire(hold.id(), now)) return false;
     for (var leg : hold.legs()) inventory.release(leg.fareId(), leg.reservedSeats());
     holds.invalidateReviews(hold.id(), now);
-    if (hold.bookingId() != null) bookings.expire(hold.bookingId());
+    if (hold.bookingId() != null) {
+      bookings.expire(hold.bookingId());
+      deadlines.cancelIfClosed(bookings.lock(hold.bookingId(),hold.userId()),now);
+    }
     return true;
   }
 }

@@ -347,7 +347,14 @@ tất cả các chiều trong một transaction, thiếu chỗ ở một chiều
 Sửa lựa chọn/số khách không gia hạn và vô hiệu review chưa dùng. Hold đã gắn đơn
 không sửa được. Đăng xuất không hủy hold; người dùng có thể đăng nhập lại và GET current.
 
-Tiếp tục đơn hết hạn: `POST /api/v1/bookings/{bookingId}/resume-payment`, không có body,
+Đổi hold sau khi đã tạo QR: `POST /api/v1/bookings/{bookingId}/switch-hold`.
+Đóng hiệu lực QR, giữ nguyên đơn cũ ở `AWAITING_REHOLD`, kết thúc hold cũ và tạo
+hold chưa gắn đơn cho lựa chọn mới với hạn cũ. Có Idempotency-Key và tiến trình
+phục hồi khi lỗi mạng. Hướng dẫn request/Postman: [Đổi hold sau QR](../docs/api/booking-hold-switch.md).
+Flyway V10 bổ sung trạng thái RELEASED/AWAITING_REHOLD/CANCELLED, bảng tiến trình
+chuyển và hạn đặt vé riêng; giữ nguyên dữ liệu/migration đã áp dụng.
+
+Tiếp tục đơn cần giữ chỗ lại: `POST /api/v1/bookings/{bookingId}/resume-payment`, không có body,
 chỉ gọi khi người dùng nhấn **Tiếp tục thanh toán**. Trả 200:
 
 ```json
@@ -368,7 +375,9 @@ Backend kiểm tra lại chuyến/hạng còn bán, chưa khởi hành và đủ
 giữ lại nguyên tử, tạo hold mới 15 phút liên kết cùng đơn. Giữ nguyên ID/mã đơn,
 review, hành khách, hành trình, snapshot giá và payment hiện có. Nếu cùng đơn đã có
 hold còn hạn thì trả hold đó, không gia hạn. Nếu thiếu chỗ ở bất kỳ chiều nào,
-không trừ ghế ở chiều nào và giữ đơn EXPIRED; UI thông báo để khách chọn chuyến khác.
+không trừ ghế ở chiều nào và giữ đơn; UI thông báo “Hiện chưa đủ ghế. Hãy quay lại sau nhé.”
+AWAITING_REHOLD là trạng thái mới; vẫn đọc được EXPIRED của đơn cũ. Chỉ quá hạn
+đặt vé của hành trình mới hủy đơn chưa thanh toán, không hủy vì thiếu ghế.
 API này hoạt động với đơn đã lưu, bao gồm đơn tạo qua `POST /api/v1/bookings`.
 
 Các mã lỗi:
@@ -388,7 +397,7 @@ Các mã lỗi:
 | 409 | BOOKING_NOT_RESUMABLE / HOLD_MISMATCH | Đơn không có trạng thái/hành trình hợp lệ để giữ lại |
 
 Khi hết hạn, hold chuyển EXPIRED, trả ghế từng chiều đúng một lần và vô hiệu review
-chưa dùng. Đơn/payment đang chờ chuyển EXPIRED. Các hold CONSUMED không trả ghế.
+chưa dùng. Đơn đang chờ chuyển AWAITING_REHOLD, payment chuyển EXPIRED. Các hold CONSUMED không trả ghế.
 Thu hồi chạy trước khi tìm/giữ chỗ và qua tác vụ nền; không phụ thuộc hoàn toàn vào
 tác vụ nền. Mỗi hold được thu hồi trong transaction riêng theo thứ tự khóa tài khoản,
 hold, booking/payment rồi fare tăng dần. Mutation cũng dùng cùng thứ tự khóa và các
@@ -761,7 +770,9 @@ expiresAt/expired; không lấy nhầm hold ban đầu sau khi đơn được gi
 Nếu hold vẫn ACTIVE trong DB nhưng đã qua hạn, `expired=true`; trạng thái lưu
 trong DB giữ nguyên để scheduler xử lý. Hold CONSUMED đã hoàn tất thì expired=false.
 App ngừng cho thanh toán khi expired=true dù bookingStatus chưa được scheduler
-đổi sang EXPIRED. Đơn PAID có payment SUCCEEDED, paidAt, ticketNumber của từng
+đổi sang AWAITING_REHOLD. Với RELEASED, dùng requiresRehold/canResumePayment và
+status để hiển thị tiếp tục thanh toán; expired chỉ thể hiện hết hạn theo thời gian.
+Đơn PAID có payment SUCCEEDED, paidAt, ticketNumber của từng
 khách và invoice(invoiceId,issuedAt); invoice/ticketNumber null nếu chưa được cấp.
 Giấy tờ chỉ trả maskedNumber. Hành trình, giá và quyền lợi lấy từ snapshot booking.
 
@@ -776,13 +787,15 @@ bookingStatus=PAID và payment.status=SUCCEEDED.
 `POST /api/v1/bookings/{bookingId}/open-for-payment` dùng Bearer token của chủ đơn,
 không có body và trả `Cache-Control: no-store`. App gọi khi người dùng mở lại
 đơn từ lịch sử. Nếu hold của chính đơn còn hạn, API trả nguyên hạn cũ và không
-trừ chỗ lần nữa. Nếu đơn `EXPIRED` chưa có payment attempt PayOS, backend kiểm
+trừ chỗ lần nữa. Nếu đơn `AWAITING_REHOLD` (hoặc `EXPIRED` cũ), backend kiểm
 tra toàn bộ chiều bay và hạng vé, giữ lại chỗ 15 phút trong một transaction rồi
 trả chi tiết đơn. Không đủ chỗ trả 409 `INSUFFICIENT_CAPACITY` mà không giữ
 một phần hành trình. Đơn đã `PAID` hoặc `RECONCILIATION_REQUIRED` vẫn có thể
 đọc chi tiết nhưng không tạo hold mới. Link PayOS cũ chưa thể xác minh được trả
-409 `PAYMENT_STATUS_UNVERIFIED`; phần đối soát với PayOS sẽ được nối khi tích
-hợp API tạo link/webhook. API không tạo QR.
+409 `PAYMENT_STATUS_UNVERIFIED`; đối soát PayOS đã được tích hợp. API không tạo QR.
+Nếu còn hold khác chưa gắn đơn, sau xác nhận gọi resume-payment với body
+`{"expectedSeatHoldId":"current-hold-id","expectedVersion":1}` để đổi ghế nguyên tử
+và tiếp tục đơn cũ. Thiếu ghế giữ nguyên lựa chọn đang xem; không cần chờ hết hạn.
 
 `POST /api/v1/bookings/{bookingId}/payment-link` cần Bearer token của chủ đơn,
 không có body, trả `Cache-Control: no-store`. Dùng sau khi tạo booking trong luồng

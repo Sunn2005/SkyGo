@@ -20,6 +20,17 @@ public class BookingDetailRepository {
   }
 
   public record Hold(String publicId, String status, Instant expiresAt) {}
+  public record Lifecycle(Instant closesAt,Instant cancelledAt,String reason) {}
+  public Lifecycle lifecycle(long booking) {
+    return jdbc.queryForObject("""
+        SELECT MIN(COALESCE(f.booking_closes_at_utc,f.departure_at_utc)) AS closes_at,b.cancelled_at_utc,b.cancellation_reason
+        FROM booking b LEFT JOIN booking_leg l ON l.booking_id=b.id
+          LEFT JOIN flight_fare fare ON fare.id=l.flight_fare_id LEFT JOIN flight f ON f.id=fare.flight_id
+        WHERE b.id=? GROUP BY b.id,b.cancelled_at_utc,b.cancellation_reason
+        """,(rs,n)->new Lifecycle(rs.getObject("closes_at",java.time.LocalDateTime.class)==null?null:instant(rs,"closes_at"),
+        rs.getObject("cancelled_at_utc",java.time.LocalDateTime.class)==null?null:instant(rs,"cancelled_at_utc"),
+        rs.getString("cancellation_reason")),booking);
+  }
   public Hold latestHold(long bookingId) {
     return jdbc.query("""
         SELECT public_id,status,expires_at_utc FROM seat_hold

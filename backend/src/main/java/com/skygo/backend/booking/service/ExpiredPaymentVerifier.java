@@ -2,14 +2,21 @@ package com.skygo.backend.booking.service;
 
 import com.skygo.backend.booking.exception.BookingException;
 import com.skygo.backend.booking.repository.PaymentAttemptRepository.Attempt;
+import com.skygo.backend.booking.repository.PaymentAttemptRepository;
+import com.skygo.backend.booking.repository.PaymentWebhookRepository;
 import com.skygo.backend.booking.service.payos.PayosGateway;
+import com.skygo.backend.booking.service.payos.PayosWebhookVerifier.Transfer;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ExpiredPaymentVerifier {
   private final PayosGateway payos;
-  public ExpiredPaymentVerifier(PayosGateway payos) { this.payos=payos; }
+  private final PaymentAttemptRepository attempts;
+  private final PaymentWebhookRepository payments;
+  public ExpiredPaymentVerifier(PayosGateway payos,PaymentAttemptRepository attempts,PaymentWebhookRepository payments) {
+    this.payos=payos;this.attempts=attempts;this.payments=payments;
+  }
   public record Evidence(Attempt expected, PayosGateway.Status status) {
     public boolean hasMoney() {
       return status.amountPaid()>0 || !status.transactions().isEmpty() || status.status().equals("PAID");
@@ -51,5 +58,26 @@ public class ExpiredPaymentVerifier {
   public static BookingException unverified() {
     return new BookingException(409,"PAYMENT_STATUS_UNVERIFIED",
         "Chưa xác minh được link thanh toán cũ đã kết thúc và chưa nhận tiền. Vui lòng thử lại sau.");
+  }
+  // Caller owns account/hold/booking/payment/attempt locks. Persist provider transfers before returning a domain error.
+  public boolean record(Evidence evidence) {
+    var a=evidence.expected();var status=evidence.status();
+    boolean money=evidence.hasMoney() || payments.hasTransfers(a.id());
+    attempts.verifiedStatus(a.id(),status.paymentLinkId(),
+        status.amountPaid()>=a.amount()?"PAID":evidence.hasMoney()?a.status():status.status());
+    for(var t:status.transactions()) {
+      var old=payments.reference(t.reference());
+      if(old.isPresent()) {
+        var r=old.get();
+        if(r.attemptId()!=a.id() || r.amount()!=t.amount() || !r.currency().equals(t.currency())
+            || !status.paymentLinkId().equals(r.paymentLinkId())) throw unverified();
+      } else payments.record(a.id(),new Transfer(a.orderCode(),status.paymentLinkId(),t.reference(),
+          t.amount(),t.currency(),t.transactionDateTime(),true));
+    }
+    if(money) {
+      payments.reconcilePending(a.id(),"HOLD_RELEASE_PROVIDER_PAYMENT");
+      payments.reconcilePayment(a.bookingId());
+    }
+    return money;
   }
 }

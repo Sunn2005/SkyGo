@@ -184,7 +184,7 @@ class ResumePaymentIntegrationTest extends BookingFixture {
     when(clock.instant()).thenReturn(first.holdExpiresAt());
     expiry.expireDue();
     assertEquals(4,seats(outFare)); assertEquals(4,seats(backFare));
-    assertEquals("EXPIRED",jdbc.queryForObject("SELECT booking_status FROM booking WHERE public_id=?",String.class,booking));
+    assertEquals("AWAITING_REHOLD",jdbc.queryForObject("SELECT booking_status FROM booking WHERE public_id=?",String.class,booking));
     var next=resume.resume(user,booking);
     assertNotEquals(first.seatHoldId(),next.seatHoldId());
     assertEquals(2200,next.totalAmount());
@@ -196,7 +196,7 @@ class ResumePaymentIntegrationTest extends BookingFixture {
     jdbc.update("UPDATE flight_fare SET available_seats=0 WHERE id=?",backFare);
     assertEquals("INSUFFICIENT_CAPACITY",assertThrows(BookingException.class,() ->resume.resume(user,booking)).code);
     assertEquals(4,seats(outFare));
-    assertEquals("EXPIRED",jdbc.queryForObject("SELECT booking_status FROM booking WHERE public_id=?",String.class,booking));
+    assertEquals("AWAITING_REHOLD",jdbc.queryForObject("SELECT booking_status FROM booking WHERE public_id=?",String.class,booking));
     create(user,TripType.ONE_WAY,1);
     assertEquals("ACTIVE_HOLD_EXISTS",assertThrows(BookingException.class,() ->resume.resume(user,booking)).code);
   }

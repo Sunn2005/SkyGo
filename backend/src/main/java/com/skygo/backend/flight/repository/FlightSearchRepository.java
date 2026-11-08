@@ -61,7 +61,7 @@ public class FlightSearchRepository {
           WHERE r.origin_airport_id = ? AND r.destination_airport_id = ?
             AND r.is_active = 1 AND o.is_active = 1 AND d.is_active = 1
             AND f.sale_status = 'ON_SALE' AND f.departure_at_utc >= ?
-            AND f.departure_at_utc < ? AND f.departure_at_utc > ?
+            AND f.departure_at_utc < ? AND COALESCE(f.booking_closes_at_utc,f.departure_at_utc) > ?
             AND (SELECT eligible.id FROM flight_fare eligible WHERE eligible.flight_id = f.id
               AND eligible.is_on_sale = 1 AND eligible.available_seats >= ? LIMIT 1) IS NOT NULL
         )
@@ -109,7 +109,7 @@ public class FlightSearchRepository {
          WHERE r.origin_airport_id = ? AND r.destination_airport_id = ?
            AND r.is_active = 1 AND o.is_active = 1 AND d.is_active = 1
            AND f.sale_status = 'ON_SALE' AND f.departure_at_utc >= ?
-           AND f.departure_at_utc < ? AND f.departure_at_utc > ?
+           AND f.departure_at_utc < ? AND COALESCE(f.booking_closes_at_utc,f.departure_at_utc) > ?
            AND EXISTS (SELECT 1 FROM flight_fare eligible WHERE eligible.flight_id = f.id
              AND eligible.is_on_sale = 1 AND eligible.available_seats >= ?)
         """;

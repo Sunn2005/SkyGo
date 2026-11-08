@@ -20,16 +20,19 @@ public class PaymentLinkService {
   private final BookingOpenRepository details;
   private final PaymentAttemptRepository attempts;
   private final PayosGateway payos;
+  private final BookingHoldSwitchRepository switches;
+  private final BookingDeadlineService deadlines;
 
   public PaymentLinkService(SeatHoldService holdsService, SeatHoldRepository holds,
       BookingRepository bookings, BookingOpenRepository details,
-      PaymentAttemptRepository attempts, PayosGateway payos) {
+      PaymentAttemptRepository attempts, PayosGateway payos,BookingHoldSwitchRepository switches,BookingDeadlineService deadlines) {
     this.holdsService = holdsService;
     this.holds = holds;
     this.bookings = bookings;
     this.details = details;
     this.attempts = attempts;
     this.payos = payos;
+    this.switches=switches;this.deadlines=deadlines;
   }
 
   private record Claim(BookingOpenResponse booking, SeatHold hold, Attempt attempt,
@@ -37,12 +40,14 @@ public class PaymentLinkService {
 
   public PaymentLinkResponse create(long user, String bookingId) {
     Claim claim = holdsService.withUser(user, () -> {
+      switches.assertIdle(user);
       var booking = bookings.lock(bookingId, user);
       if (booking.status().equals("PAID") || booking.paymentStatus().equals("SUCCEEDED"))
         throw new BookingException(409, "BOOKING_ALREADY_PAID", "Đơn đã thanh toán.");
       if (booking.paymentStatus().equals("RECONCILIATION_REQUIRED"))
         throw new BookingException(409, "PAYMENT_RECONCILIATION_REQUIRED",
             "Đơn có giao dịch cần đối soát trước khi thanh toán tiếp.");
+      if (deadlines.cancelIfClosed(booking,holdsService.now())) return Outcome.failed(BookingDeadlineService.closed());
       if (!booking.status().equals("PENDING_PAYMENT")
           || !booking.paymentStatus().equals("PENDING"))
         throw new BookingException(409, "BOOKING_NOT_PAYABLE", "Đơn chưa sẵn sàng thanh toán.");
@@ -112,6 +117,10 @@ public class PaymentLinkService {
         throw unverified();
       attempts.complete(attempt.id(), link.paymentLinkId(), link.checkoutUrl(),
           link.qrCode());
+      if(deadlines.cancelIfClosed(booking,holdsService.now())) {
+        attempts.expire(attempt.id());
+        return Outcome.failed(BookingDeadlineService.closed());
+      }
       var active = holds.active(user);
       if (active.isEmpty() || active.get().id() != attempt.holdId()
           || !booking.status().equals("PENDING_PAYMENT")

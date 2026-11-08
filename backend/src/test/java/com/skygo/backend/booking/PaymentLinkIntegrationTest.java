@@ -222,7 +222,7 @@ class PaymentLinkIntegrationTest extends PricingFixture {
     mvc.perform(post("/api/v1/payos/webhook").contentType("application/json")
         .content(webhook(order, created.booking().totalAmount(), "late-" + order)))
         .andExpect(status().isOk());
-    assertEquals("EXPIRED", jdbc.queryForObject(
+    assertEquals("AWAITING_REHOLD", jdbc.queryForObject(
         "SELECT booking_status FROM booking WHERE public_id=?", String.class,
         created.booking().bookingId()));
     assertEquals("RECONCILIATION_REQUIRED", jdbc.queryForObject("""
@@ -391,7 +391,7 @@ class PaymentLinkIntegrationTest extends PricingFixture {
     expiry.expireDue();
     mvc.perform(get("/api/v1/bookings/"+c.booking().bookingId()).with(as(user)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.bookingStatus").value("EXPIRED"))
+        .andExpect(jsonPath("$.data.bookingStatus").value("AWAITING_REHOLD"))
         .andExpect(jsonPath("$.data.payment.status").value("RECONCILIATION_REQUIRED"))
         .andExpect(jsonPath("$.data.seatHold.expired").value(true))
         .andExpect(jsonPath("$.data.passengers[0].ticketNumber").isEmpty())

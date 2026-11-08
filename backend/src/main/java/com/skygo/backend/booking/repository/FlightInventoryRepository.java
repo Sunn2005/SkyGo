@@ -13,13 +13,14 @@ public class FlightInventoryRepository {
   public FlightInventoryRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
   public record Fare(long id, String flightId, String cabin, String origin, String originCity,
       String originZone, String destination, String destinationCity, String destinationZone,
-      Instant departure, Instant arrival, boolean onSale) {
+      Instant departure, Instant arrival, boolean onSale, Instant bookingClosesAt) {
     public LocalDate localDate() { return departure.atZone(ZoneId.of(originZone)).toLocalDate(); }
   }
   private static final String SELECT = """
       SELECT fare.id,fare.cabin_class,f.public_id,o.code AS origin,o.city AS origin_city,
         o.time_zone AS origin_zone,d.code AS destination,d.city AS destination_city,
         d.time_zone AS destination_zone,f.departure_at_utc,f.arrival_at_utc,
+        COALESCE(f.booking_closes_at_utc,f.departure_at_utc) AS booking_closes_at,
         (fare.is_on_sale AND f.sale_status='ON_SALE' AND r.is_active AND o.is_active AND d.is_active) AS on_sale
       FROM flight_fare fare JOIN flight f ON f.id=fare.flight_id JOIN air_route r ON r.id=f.route_id
         JOIN airport o ON o.id=r.origin_airport_id JOIN airport d ON d.id=r.destination_airport_id
@@ -36,13 +37,15 @@ public class FlightInventoryRepository {
         rs.getString("cabin_class"), rs.getString("origin"), rs.getString("origin_city"),
         rs.getString("origin_zone"), rs.getString("destination"), rs.getString("destination_city"),
         rs.getString("destination_zone"), instant(rs, "departure_at_utc"),
-        instant(rs, "arrival_at_utc"), rs.getBoolean("on_sale")), args);
+        instant(rs, "arrival_at_utc"), rs.getBoolean("on_sale"),instant(rs,"booking_closes_at")), args);
   }
   public void lock(Collection<Long> ids) {
     for (long id : new TreeSet<>(ids))
       jdbc.queryForObject("SELECT id FROM flight_fare WHERE id=? FOR UPDATE", Long.class, id);
   }
   public void requireAvailable(Fare fare, Instant now) {
+    if (!now.isBefore(fare.bookingClosesAt()))
+      throw new BookingException(409,"BOOKING_WINDOW_CLOSED","Chuyến bay đã hết thời hạn đặt vé.");
     if (!fare.onSale() || !fare.departure().isAfter(now))
       throw new BookingException(409, "FLIGHT_UNAVAILABLE", "Chuyến bay hoặc hạng vé không còn mở bán.");
   }
@@ -52,7 +55,10 @@ public class FlightInventoryRepository {
         UPDATE flight_fare SET available_seats=available_seats-?,updated_at_utc=UTC_TIMESTAMP(6)
         WHERE id=? AND is_on_sale=1 AND available_seats>=?
         """, seats, fare, seats) != 1)
-      throw new BookingException(409, "INSUFFICIENT_CAPACITY", "Không còn đủ chỗ. Vui lòng chọn chuyến hoặc hạng vé khác.");
+      throw new BookingException(409, "INSUFFICIENT_CAPACITY", "Hiện chưa đủ ghế. Hãy quay lại sau nhé.");
+  }
+  public long available(long fare) {
+    return jdbc.queryForObject("SELECT available_seats FROM flight_fare WHERE id=?",Long.class,fare);
   }
   public void release(long fare, long seats) {
     if (seats == 0) return;

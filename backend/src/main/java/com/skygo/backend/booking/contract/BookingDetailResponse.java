@@ -8,7 +8,8 @@ public record BookingDetailResponse(
     Instant serverTime, String tripType, PassengerCountsRequest passengerCounts,
     BookingOpenResponse.Contact contact, Hold seatHold, BookingOpenResponse.Price price,
     String currency, BookingOpenResponse.Payment payment, List<BookingOpenResponse.Leg> legs,
-    List<Passenger> passengers, Invoice invoice) {
+    List<Passenger> passengers, Invoice invoice, boolean requiresRehold, boolean canResumePayment,
+    Instant bookingClosesAt, Instant cancelledAt, String cancellationReason) {
   public record Hold(String seatHoldId, String status, Instant expiresAt, boolean expired) {}
   public record Invoice(String invoiceId, Instant issuedAt) {}
   public record Benefit(String direction, int carryOnMaxKg, int checkedPieces,

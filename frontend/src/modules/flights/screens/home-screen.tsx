@@ -306,56 +306,63 @@ export default function HomeScreen() {
                   : "Hiện chưa có tuyến bay đang mở bán."}
             </Notice>
           )}
-          {routes.slice(1).map((route) => (
-            <Tap
-              key={route.routeId}
-              label={`Chọn hành trình, ${route.title}`}
-              onPress={() => openRoute(route)}
-              style={[styles.card, styles.smallCard]}
-            >
-              {route.imageUrl ? (
-                <Image
-                  source={{ uri: `${API_BASE_URL}${route.imageUrl}` }}
-                  style={styles.thumbnail}
-                  contentFit="cover"
-                  accessibilityLabel={route.destination.city}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.thumbnail,
-                    {
-                      backgroundColor: "#E3F4F4",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    },
-                  ]}
-                >
-                  <Icon name="home-design-imgPlane" size={28} />
-                </View>
-              )}
-              <View style={{ flex: 1, gap: 3 }}>
-                <Label size={16} weight="semibold" color={ink}>
-                  {route.title}
-                </Label>
-                <Label size={13} color={muted}>
-                  Giá từ{" "}
-                  <Label size={14} color={teal} weight="semibold">
-                    {route.price}
-                  </Label>
-                </Label>
-              </View>
-              <HomeIcon name="arrow" color={teal} size={23} />
-            </Tap>
-          ))}
-          <Label
-            size={11}
-            color={muted}
-            style={{ marginTop: -7, paddingHorizontal: 4 }}
-          >
-            Giá cho 1 người lớn, một chiều, đã gồm VAT
-          </Label>
         </View>
+        {routes.length > 1 && (
+          <View style={[styles.section, styles.secondarySection]}>
+            <Label size={20} weight="bold" color={ink}>
+              {data?.secondarySectionTitle ?? "Cũng được yêu thích"}
+            </Label>
+            {routes.slice(1).map((route) => (
+              <Tap
+                key={route.routeId}
+                label={`Chọn hành trình, ${route.title}`}
+                onPress={() => openRoute(route)}
+                style={[styles.card, styles.smallCard]}
+              >
+                {route.imageUrl ? (
+                  <Image
+                    source={{ uri: `${API_BASE_URL}${route.imageUrl}` }}
+                    style={styles.thumbnail}
+                    contentFit="cover"
+                    accessibilityLabel={route.destination.city}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.thumbnail,
+                      {
+                        backgroundColor: "#E3F4F4",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      },
+                    ]}
+                  >
+                    <Icon name="home-design-imgPlane" size={28} />
+                  </View>
+                )}
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Label size={16} weight="semibold" color={ink}>
+                    {route.title}
+                  </Label>
+                  <Label size={13} color={muted}>
+                    Giá từ{" "}
+                    <Label size={14} color={teal} weight="semibold">
+                      {route.price}
+                    </Label>
+                  </Label>
+                </View>
+                <HomeIcon name="arrow" color={teal} size={23} />
+              </Tap>
+            ))}
+            <Label
+              size={11}
+              color={muted}
+              style={{ marginTop: -7, paddingHorizontal: 4 }}
+            >
+              Giá cho 1 người lớn, một chiều, đã gồm VAT
+            </Label>
+          </View>
+        )}
       </ScrollView>
       <Modal
         visible={notifications}
@@ -414,6 +421,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   section: { marginTop: 18, gap: 11 },
+  secondarySection: { marginTop: 28 },
   card: {
     borderRadius: 16,
     backgroundColor: "white",

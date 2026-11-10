@@ -17,7 +17,7 @@ public class SecurityConfig {
       @org.springframework.beans.factory.annotation.Value("${skygo.cors.allowed-origins:http://localhost:8081,http://127.0.0.1:8081}") String origins) {
     var config = new org.springframework.web.cors.CorsConfiguration();
     config.setAllowedOrigins(java.util.Arrays.stream(origins.split(",")).map(String::trim).toList());
-    config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "OPTIONS"));
+    config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(java.util.List.of("Content-Type", "Authorization", "Accept", "Idempotency-Key"));
     config.setExposedHeaders(java.util.List.of("Retry-After"));
     var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();

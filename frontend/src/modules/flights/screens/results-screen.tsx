@@ -1,6 +1,13 @@
-import { useCallback, useState, useRef, useLayoutEffect } from "react";
+import {
+  useCallback,
+  useState,
+  useRef,
+  useLayoutEffect,
+  useEffect,
+} from "react";
 import { View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useFavoriteFlights } from "../services/use-favorite-flights";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import { money } from "@/shared/utils/format";
 import { Button, Card, Label, Notice, Row, Tap } from "@/shared/components/ui";
@@ -27,6 +34,11 @@ import {
 import type { Flight, Search } from "../types";
 
 export default function ResultsScreen() {
+  const saved = useFavoriteFlights();
+  const { savedFlightId, savedFlightDate } = useLocalSearchParams<{
+    savedFlightId?: string;
+    savedFlightDate?: string;
+  }>();
   const b = useBooking();
   const { session } = useAccount();
   const [existingBookingId, setExistingBookingId] = useState<string | null>(
@@ -266,6 +278,22 @@ export default function ResultsScreen() {
       }
     }
   };
+  // A saved flight can be beyond the first page. Load until it is found or
+  // the result is exhausted; a request error stops automatic loading.
+  useEffect(() => {
+    if (
+      savedFlightId &&
+      savedFlightDate === dateTab &&
+      activeDirection === "OUTBOUND" &&
+      !loading &&
+      !loadingMore &&
+      !notice &&
+      day?.pagination.hasMore &&
+      !items.some((flight) => flight.id === savedFlightId)
+    ) {
+      void loadMore();
+    }
+  });
   const choose = async (
     flight: Flight,
     cabin: NonNullable<Flight["cabin"]>,
@@ -484,6 +512,16 @@ export default function ResultsScreen() {
             Đã gồm thuế VAT
           </Label>
           {!!notice && <Notice>{notice}</Notice>}
+          {!!saved.error && (
+            <>
+              <Notice error>{saved.error}</Notice>
+              <Button
+                secondary
+                title="Tải lại chuyến đã lưu"
+                onPress={saved.refresh}
+              />
+            </>
+          )}
           {existingBookingId && (
             <Button
               secondary
@@ -555,10 +593,52 @@ export default function ResultsScreen() {
             </Card>
           )}
           {results.map((flight) => (
-            <Card key={flight.id}>
-              <Label weight="semibold">
-                {flight.airline} · {flight.number}
-              </Label>
+            <Card
+              key={flight.id}
+              style={
+                flight.id === savedFlightId
+                  ? { borderWidth: 2, borderColor: c.primary }
+                  : undefined
+              }
+            >
+              {flight.id === savedFlightId && (
+                <Label color={c.primary} weight="semibold">
+                  Chuyến bay bạn đã lưu
+                </Label>
+              )}
+              <Row>
+                <Label weight="semibold" style={{ flex: 1 }}>
+                  {flight.airline} · {flight.number}
+                </Label>
+                <Tap
+                  label={
+                    saved.favorites.includes(flight.id)
+                      ? "Bỏ yêu thích chuyến bay"
+                      : "Lưu chuyến bay yêu thích"
+                  }
+                  selected={saved.favorites.includes(flight.id)}
+                  disabled={
+                    saved.busy.includes(flight.id) ||
+                    (saved.signedIn && !saved.page)
+                  }
+                  style={{
+                    minWidth: 44,
+                    minHeight: 44,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  onPress={() =>
+                    void saved.toggle(
+                      flight.id,
+                      saved.favorites.includes(flight.id),
+                    )
+                  }
+                >
+                  <Label size={27} color={c.primary}>
+                    {saved.favorites.includes(flight.id) ? "♥" : "♡"}
+                  </Label>
+                </Tap>
+              </Row>
               <FlightTimes flight={flight} leg={leg} plane="6-6622-imgPlane2" />
               {flight.arrivalAt &&
                 flight.departureAt &&

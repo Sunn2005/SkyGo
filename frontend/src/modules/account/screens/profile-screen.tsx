@@ -14,8 +14,10 @@ import {
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
 import { useAccount } from "../context/account-context";
+import { useFavoriteFlights } from "@/modules/flights/services/use-favorite-flights";
 
 export default function ProfileScreen() {
+  useFavoriteFlights();
   const b = useBooking();
   const { session, logout, refreshUser } = useAccount();
   const [busy, setBusy] = useState<"logout" | "refresh" | null>(null);

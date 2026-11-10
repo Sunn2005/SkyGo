@@ -2,6 +2,7 @@ const destinations = {
   detail: "/results",
   "flight-selection": "/results",
   results: "/results",
+  saved: "/saved",
   traveller: "/traveller",
   baggage: "/baggage",
   payment: "/payment",

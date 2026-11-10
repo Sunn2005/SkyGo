@@ -58,6 +58,9 @@ export default function OptionsScreen() {
     else if (field === "cabin") setSearch((s) => ({ ...s, cabin }));
     router.back();
   };
+  if (isAirport)
+    return <AirportPicker key={field} field={field === "to" ? "to" : "from"} />;
+
   return (
     <Screen
       title={titles[field] ?? "Lựa chọn"}
@@ -65,9 +68,6 @@ export default function OptionsScreen() {
         !isAirport ? <ActionBar title="Áp dụng" onPress={save} /> : undefined
       }
     >
-      {isAirport && (
-        <AirportPicker key={field} field={field === "to" ? "to" : "from"} />
-      )}
       {isDate && (
         <>
           <Label size={22} weight="semibold">

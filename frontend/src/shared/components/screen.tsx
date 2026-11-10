@@ -1,6 +1,13 @@
 import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
 import type { ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import { Stack } from "expo-router/stack";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +24,7 @@ export function Screen({
   onBack,
   design = false,
   top,
+  topStyle,
   customHeader,
 }: {
   children: ReactNode;
@@ -28,6 +36,7 @@ export function Screen({
   onBack?: () => void;
   design?: boolean;
   top?: ReactNode;
+  topStyle?: StyleProp<ViewStyle>;
   customHeader?: ReactNode;
 }) {
   const inset = useSafeAreaInsets();
@@ -104,14 +113,17 @@ export function Screen({
       )}
       {top && (
         <View
-          style={{
-            paddingHorizontal: design ? horizontalPadding : space.xl,
-            paddingTop: 8,
-            paddingBottom: 12,
-            backgroundColor: c.surface,
-            borderBottomWidth: 1,
-            borderBottomColor: c.line,
-          }}
+          style={[
+            {
+              paddingHorizontal: design ? horizontalPadding : space.xl,
+              paddingTop: 8,
+              paddingBottom: 12,
+              backgroundColor: c.surface,
+              borderBottomWidth: 1,
+              borderBottomColor: c.line,
+            },
+            topStyle,
+          ]}
         >
           {top}
         </View>

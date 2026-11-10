@@ -5,6 +5,7 @@ import com.skygo.backend.auth.model.AuthSession;
 import com.skygo.backend.booking.contract.*;
 import com.skygo.backend.booking.service.BookingCreationService;
 import com.skygo.backend.booking.service.BookingDetailService;
+import com.skygo.backend.booking.service.BookingListService;
 import jakarta.validation.Valid;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,10 +15,23 @@ import org.springframework.web.bind.annotation.*;
 public class BookingController {
   private final BookingCreationService service;
   private final BookingDetailService details;
+  private final BookingListService lists;
 
-  public BookingController(BookingCreationService service, BookingDetailService details) {
+  public BookingController(BookingCreationService service, BookingDetailService details,
+      BookingListService lists) {
     this.service = service;
     this.details = details;
+    this.lists = lists;
+  }
+
+  @GetMapping("/api/v1/bookings")
+  public ResponseEntity<BookingListResponse> list(
+      @AuthenticationPrincipal AuthSession session,
+      @RequestParam(defaultValue = "0") String page,
+      @RequestParam(defaultValue = "20") String size,
+      @RequestParam(defaultValue = "all") String status) {
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+        .body(lists.list(session.user().id(), page, size, status));
   }
 
   @GetMapping("/api/v1/bookings/{bookingId}")

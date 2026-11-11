@@ -136,7 +136,7 @@ export default function HomeScreen() {
             Khám phá điểm đến tiếp theo cùng SkyGo
           </Label>
         </View>
-        <Tap
+        {/* <Tap
           label="Tìm chuyến bay, bạn muốn bay đến đâu?"
           onPress={() => router.push("/search")}
           style={styles.search}
@@ -148,7 +148,7 @@ export default function HomeScreen() {
             Bạn muốn bay đến đâu?
           </Label>
           <HomeIcon name="arrow" color={teal} size={24} />
-        </Tap>
+        </Tap> */}
         <Tap
           label="Hỏi trợ lý SkyGo"
           onPress={() => router.push("/ai-chat")}

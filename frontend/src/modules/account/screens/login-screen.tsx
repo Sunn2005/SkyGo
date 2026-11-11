@@ -52,6 +52,7 @@ export default function LoginScreen() {
       : 0;
 
   const { href: destination, resumeFlight } = loginDestination(returnTo);
+  const resumeChat = returnTo?.replace(/^\//, "") === "ai-chat";
   const { setPendingFlight } = useBooking();
   useEffect(() => {
     if (session && resumeFlight)
@@ -59,8 +60,10 @@ export default function LoginScreen() {
         pathname: "/results",
         params: { resumeSelection: "1" },
       });
-  }, [session, resumeFlight]);
-  if (session) return resumeFlight ? null : <Redirect href={destination} />;
+    else if (session && resumeChat) router.dismissTo("/ai-chat");
+  }, [session, resumeFlight, resumeChat]);
+  if (session)
+    return resumeFlight || resumeChat ? null : <Redirect href={destination} />;
 
   const submit = async () => {
     if (pending.current || remaining > 0) return;

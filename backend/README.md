@@ -1,5 +1,26 @@
 # SkyGo backend
 
+## Nền tảng AI/RAG
+
+Chuyển từ Qdrant: [hướng dẫn chuyển vector không embed lại](../docs/ai/mariadb-vector-migration.md).
+Máy mới: [hướng dẫn Windows](../docs/SETUP-NEW-MACHINE-WINDOWS.md).
+Không cần Docker cho runtime AI; migration V12 tạo bảng vector MariaDB 768 chiều.
+
+Module Spring AI dùng Gemini và MariaDB Vector, tắt mặc định qua `SKYGO_AI_ENABLED=false`.
+Hướng dẫn cấu hình, nạp `.env` và kiểm thử bằng collection riêng:
+[spring-ai-foundation.md](../docs/ai/spring-ai-foundation.md).
+
+Đồng bộ dữ liệu MariaDB sang bảng vector `ai_document`: [data-indexing.md](../docs/ai/data-indexing.md).
+Chạy một lần từ thư mục SkyGo:
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\index-ai.ps1`.
+
+Mặc định: chuyến bay 30 ngày tới, lịch sử đặt vé 15 ngày vừa qua;
+8 document mỗi batch, nghỉ 10 giây giữa các batch và timeout 90 giây mỗi attempt.
+
+API chat đã có tại `POST /api/v1/ai/chat`, hỗ trợ tra cứu công khai và lịch sử theo
+tài khoản đăng nhập. Hướng dẫn cấu hình, gọi PowerShell và hợp đồng dữ liệu:
+[chat-api.md](../docs/ai/chat-api.md).
+
 Backend cho ứng dụng đặt vé máy bay SkyGo, sử dụng Java 21, Spring Boot và MariaDB.
 
 ## Trạng thái tích hợp hiện tại
@@ -840,6 +861,10 @@ chỉ khi tổng tiền nhận đúng số tiền đơn và hold còn hiệu l�
 
 Khi dùng Cloudflare quick tunnel chuyển tiếp `http://localhost:8080`, URL đăng
 ký tại PayOS có dạng `https://<subdomain>.trycloudflare.com/api/v1/payos/webhook`.
+Có thể nhấp đúp `start-payos-demo.cmd` ở gốc repo để mở PowerShell, chạy Cloudflare,
+lấy URL và tự đăng ký webhook bằng khóa trong `backend/.env`. Thêm
+`-UpdateFrontendEnv` để tự cập nhật `frontend/.env.local`. Backend/DB cần chạy trước.
+Hướng dẫn và cách đăng ký thủ công khi lỗi: [Chạy demo PayOS](../docs/payos-demo.md).
 Mỗi lần URL tunnel thay đổi cần đăng ký lại webhook với PayOS. Giữ checksum key
 trên backend; frontend đọc trạng thái đơn từ API backend, không dựa vào trang
 returnUrl để tự xác nhận đã thanh toán.

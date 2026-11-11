@@ -1,0 +1,18 @@
+# Legacy Qdrant: used only as a read-only source by scripts/migrate-vectors.ps1.
+# Normal SkyGo runtime now stores vectors in MariaDB and does not need this service.
+name: skygo-rag
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+      - qdrant_snapshots:/qdrant/snapshots
+
+volumes:
+  qdrant_data:
+  qdrant_snapshots:

@@ -44,6 +44,7 @@
     "test:account": "node --test tests/account.test.cjs",
     "test:booking": "node --test tests/booking.test.cjs",
     "test:api": "node --test tests/api.test.cjs",
+    "test:ai": "node --test tests/ai-chat.test.cjs",
     "test:payment": "node --test tests/payment.test.cjs"
   },
   "private": true

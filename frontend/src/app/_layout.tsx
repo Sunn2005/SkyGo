@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { ReservationNotice } from "@/modules/booking/components/reservation-notice";
 import { BottomNav } from "@/shared/components/bottom-nav";
 import { colors } from "@/shared/theme";
+import { AiChatProvider } from "@/modules/ai/context/chat-context";
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -41,45 +42,48 @@ export default function RootLayout() {
     );
   return (
     <AccountProvider>
-      <BookingSession>
-        <StatusBar style="dark" />
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: colors.surface,
-            alignItems: "center",
-          }}
-        >
+      <AiChatProvider>
+        <BookingSession>
+          <StatusBar style="dark" />
           <View
             style={{
               flex: 1,
-              width: "100%",
-              maxWidth: Platform.OS === "web" ? 402 : 600,
-              backgroundColor: colors.background,
+              backgroundColor: colors.surface,
+              alignItems: "center",
             }}
           >
-            <Stack
-              screenOptions={{
-                contentStyle: { backgroundColor: colors.background },
-                headerBackButtonDisplayMode: "minimal",
+            <View
+              style={{
+                flex: 1,
+                width: "100%",
+                maxWidth: Platform.OS === "web" ? 402 : 600,
+                backgroundColor: colors.background,
               }}
             >
-              <Stack.Screen name="index" options={{ title: "SkyGo" }} />
-              <Stack.Screen
-                name="options"
-                options={{ presentation: "modal" }}
-              />
-              <Stack.Screen
-                name="filters"
-                options={{ presentation: "modal" }}
-              />
-              <Stack.Screen name="help" options={{ presentation: "modal" }} />
-            </Stack>
-            <BottomNav />
-            <ReservationNotice />
+              <Stack
+                screenOptions={{
+                  contentStyle: { backgroundColor: colors.background },
+                  headerBackButtonDisplayMode: "minimal",
+                }}
+              >
+                <Stack.Screen name="index" options={{ title: "SkyGo" }} />
+                <Stack.Screen name="ai-chat" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="options"
+                  options={{ presentation: "modal" }}
+                />
+                <Stack.Screen
+                  name="filters"
+                  options={{ presentation: "modal" }}
+                />
+                <Stack.Screen name="help" options={{ presentation: "modal" }} />
+              </Stack>
+              <BottomNav />
+              <ReservationNotice />
+            </View>
           </View>
-        </View>
-      </BookingSession>
+        </BookingSession>
+      </AiChatProvider>
     </AccountProvider>
   );
 }

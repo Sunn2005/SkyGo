@@ -1,4 +1,5 @@
 const destinations = {
+  "ai-chat": "/ai-chat",
   detail: "/results",
   "flight-selection": "/results",
   results: "/results",

@@ -149,6 +149,43 @@ export default function HomeScreen() {
           </Label>
           <HomeIcon name="arrow" color={teal} size={24} />
         </Tap>
+        <Tap
+          label="Hỏi trợ lý SkyGo"
+          onPress={() => router.push("/ai-chat")}
+          style={{
+            marginTop: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            borderRadius: 16,
+            padding: 14,
+            backgroundColor: "#E2F2EF",
+            borderWidth: 1,
+            borderColor: "#C4E4DE",
+          }}
+        >
+          <View
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 13,
+              backgroundColor: "white",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <HomeIcon name="chat" color={teal} size={25} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Label size={15} weight="semibold" color={ink}>
+              Hỏi trợ lý SkyGo
+            </Label>
+            <Label size={12} color={muted}>
+              Tìm vé, hỏi hành lý và xem chuyến đã đặt
+            </Label>
+          </View>
+          <HomeIcon name="arrow" color={teal} size={20} />
+        </Tap>
         <View style={styles.section}>
           <Label size={20} weight="bold" color={ink}>
             Chuyến bay sắp tới

@@ -1,6 +1,11 @@
 import { Image } from "expo-image";
 
 const paths = {
+  chat: '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-6 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m12 7 1.2 2.8L16 11l-2.8 1.2L12 15l-1.2-2.8L8 11l2.8-1.2Z"/>',
+  send: '<path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
   plane:
     '<path transform="rotate(35 12 12)" d="M12 2c-1 0-1.5 1-1.5 2v5L3 13v2l7.5-2v5L8 20v2l4-1 4 1v-2l-2.5-2v-5l7.5 2v-2l-7.5-4V4c0-1-.5-2-1.5-2Z"/>',
   search: '<circle cx="10.8" cy="10.8" r="7.3"/><path d="m16.2 16.2 5 5"/>',

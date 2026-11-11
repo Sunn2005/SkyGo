@@ -1,23 +1,29 @@
 import { Modal, View } from "react-native";
 import { HomeIcon } from "@/modules/flights/components/home-icon";
-import { Button, Card, Label, Tap } from "@/shared/components/ui";
+import { Button, Card, Label, Notice, Tap } from "@/shared/components/ui";
 import { colors as c } from "@/shared/theme";
 
 export function BookingHistoryLoginDialog({
   visible,
   onCancel,
   onConfirm,
+  busy = false,
+  error = "",
 }: {
   visible: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  busy?: boolean;
+  error?: string;
 }) {
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onCancel}
+      onRequestClose={() => {
+        if (!busy) onCancel();
+      }}
     >
       <View
         style={{
@@ -55,10 +61,12 @@ export function BookingHistoryLoginDialog({
               Bạn cần đăng nhập để xem các đơn đặt vé và quản lý hành trình của
               mình.
             </Label>
-            <Button title="Đăng nhập" onPress={onConfirm} />
+            {!!error && <Notice error>{error}</Notice>}
+            <Button title="Đăng nhập" onPress={onConfirm} loading={busy} />
             <Tap
               label="Để sau"
               onPress={onCancel}
+              disabled={busy}
               style={{ alignItems: "center" }}
             >
               <Label weight="semibold" muted>

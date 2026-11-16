@@ -58,6 +58,8 @@ Flyway chạy `V1__create_skygo_schema.sql` khi khởi động, tạo đủ 21 b
 
 Flyway V2 nạp danh mục hệ thống: 24 sân bay thực tế thuộc 11 nhóm UI, 46 tuyến hai chiều, chính sách giá/quyền lợi và các chuyến bay mẫu với hai hạng ghế. V2 không tạo tài khoản, đơn, thanh toán hay vé. Lịch bay mẫu được tính từ ngày V2 chạy và sẽ hết trong tương lai; khi đó cần bổ sung lịch mới qua quy trình vận hành riêng. `database/home-demo-seed.sql` là fixture thủ công tạo các đơn mẫu cho đúng một tài khoản, không phải migration và không tự chạy khi backend khởi động.
 
+Flyway V13 tự nạp lịch cho demo 21/11/2026 khi backend khởi động với database đã có V1–V12: mỗi ngày 23–28/11 có 5 chuyến SGN → PQC, và ngày 25/11 có 1 chuyến PQC → SGN. Mỗi chuyến có hai hạng vé, đủ giá và quyền lợi hành lý để đi tiếp luồng đặt chỗ. Giờ bay lưu theo UTC, hiển thị theo giờ Việt Nam. V13 chỉ thêm dữ liệu catalog, không sửa chuyến/đơn hiện có; nếu database đã có chuyến khác cùng tuyến và ngày thì tổng kết quả tìm kiếm có thể lớn hơn số chuyến V13 bổ sung.
+
 Flyway V3 thêm `airport.cover_image_path` và gán ảnh phong cảnh cho 24 sân bay mẫu. Ảnh nằm tại `src/main/resources/static/airports/{IATA}.jpg`, được trả công khai ở `/airports/{IATA}.jpg`. Nguồn ảnh và giấy phép được ghi trong `AIRPORT_IMAGE_SOURCES.md`. Sân bay bổ sung sau này có thể để `cover_image_path` là `NULL` cho đến khi có ảnh.
 
 Flyway V4 thêm `checked_baggage_policy`, gắn mọi `fare_benefit_policy` với policy

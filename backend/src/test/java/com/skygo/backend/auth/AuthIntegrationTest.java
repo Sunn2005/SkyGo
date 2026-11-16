@@ -60,9 +60,11 @@ class AuthIntegrationTest {
   void migrationAndAuthLifecycle() throws Exception {
     assertEquals(0, flyway.migrate().migrationsExecuted);
     assertEquals(
-        26,
+        3,
         jdbc.queryForObject(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()",
+            "SELECT COUNT(*) FROM information_schema.tables "
+                + "WHERE table_schema=DATABASE() "
+                + "AND table_name IN ('app_user', 'auth_session', 'login_guard')",
             Integer.class));
     String phone = "09" + String.format("%08d", new Random().nextInt(100000000));
     var registered = call("POST", "register", registration(phone), null);

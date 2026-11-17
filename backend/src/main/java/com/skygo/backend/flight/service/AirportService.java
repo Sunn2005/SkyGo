@@ -12,9 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AirportService {
   private final AirportRepository repository;
+  private final AirportListCache cache;
 
-  public AirportService(AirportRepository repository) {
+  public AirportService(AirportRepository repository, AirportListCache cache) {
     this.repository = repository;
+    this.cache = cache;
   }
 
   public List<RegionResponse> regions() {
@@ -33,8 +35,10 @@ public class AirportService {
       throw new AirportQueryException("regionCode", "Mã khu vực không hợp lệ.");
     if (origin != null && (!origin.matches("[A-Z]{3}") || !repository.activeOriginExists(origin)))
       throw new AirportQueryException("origin", "Điểm đi phải là mã sân bay đang hoạt động.");
-    return repository.airports(keyword == null ? null : keyword.strip(), country, region,
-        page, size);
+    String normalizedKeyword = keyword == null ? null : keyword.strip();
+    var query = new AirportListCache.Query(normalizedKeyword, country, region, page, size);
+    return cache.getOrLoad(query,
+        () -> repository.airports(normalizedKeyword, country, region, page, size));
   }
 
   private int integer(String field, String value, int min, int max) {

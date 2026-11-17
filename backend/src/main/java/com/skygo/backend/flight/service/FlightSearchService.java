@@ -28,16 +28,18 @@ public class FlightSearchService {
   private final Clock clock;
   private final Airline airline;
   private final SeatHoldExpiryService expiry;
+  private final FlightSearchCache cache;
   private final TransactionTemplate readTransaction;
 
   public FlightSearchService(FlightSearchRepository repository, Clock clock,
       @Value("${skygo.airline.code}") String airlineCode,
       @Value("${skygo.airline.name}") String airlineName,
-      SeatHoldExpiryService expiry, PlatformTransactionManager manager) {
+      SeatHoldExpiryService expiry, PlatformTransactionManager manager, FlightSearchCache cache) {
     this.repository = repository;
     this.clock = clock;
     this.airline = new Airline(airlineCode, airlineName);
     this.expiry = expiry;
+    this.cache = cache;
     readTransaction = new TransactionTemplate(manager);
     readTransaction.setReadOnly(true);
     readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
@@ -51,12 +53,17 @@ public class FlightSearchService {
     var fromZone = ZoneId.of(from.timeZone());
     int page = request.page() == null ? 0 : request.page();
     int size = request.size() == null ? 20 : request.size();
+    long requiredSeats = (long) request.passengerCounts().adults() + request.passengerCounts().children();
+    var dayStart = date.atStartOfDay(fromZone).toInstant();
+    var dayEnd = date.plusDays(1).atStartOfDay(fromZone).toInstant();
     expiry.expireDue();
-    var rows = readTransaction.execute(status -> repository.search(new Criteria(from.id(), to.id(),
-        date.atStartOfDay(fromZone).toInstant(), date.plusDays(1).atStartOfDay(fromZone).toInstant(),
-        clock.instant(), (long) request.passengerCounts().adults() + request.passengerCounts().children(), page, size)));
-    return new FlightSearchResponse(flights(rows.fares(), from, to),
-        new Pagination(page, size, rows.total(), (rows.total() + size - 1) / size));
+    var key = new FlightSearchCache.Query(from.id(), to.id(), dayStart, dayEnd, requiredSeats, page, size);
+    return cache.getOrLoad(key, () -> {
+      var rows = readTransaction.execute(status -> repository.search(new Criteria(from.id(), to.id(),
+          dayStart, dayEnd, clock.instant(), requiredSeats, page, size)));
+      return new FlightSearchResponse(flights(rows.fares(), from, to),
+          new Pagination(page, size, rows.total(), (rows.total() + size - 1) / size));
+    });
   }
 
   public NearbyFlightSearchResponse nearbyDays(NearbyFlightSearchRequest request) {
@@ -83,19 +90,24 @@ public class FlightSearchService {
     var windows = dates.stream().filter(day -> disabledReason(day, criteria, today) == null)
         .map(day -> new DayWindow(day, day.atStartOfDay(zone).toInstant(),
             day.plusDays(1).atStartOfDay(zone).toInstant())).toList();
-    var rows = readTransaction.execute(status -> repository.searchNearby(new NearbyCriteria(
-        context.from().id(), context.to().id(), windows, checkedAt,
-        (long) request.passengerCounts().adults() + request.passengerCounts().children())));
-    var days = dates.stream().map(day -> {
-      var reason = disabledReason(day, criteria, today);
-      var found = rows.getOrDefault(day, new SearchRows(0, List.of()));
-      int size = NearbyFlightSearchRequest.PAGE_SIZE;
-      return new NearbyFlightSearchResponse.Day(day, reason == null, reason,
-          flights(found.fares(), context.from(), context.to()),
-          new NearbyFlightSearchResponse.Pagination(0, size, found.total(),
-              (found.total() + size - 1) / size, found.total() > size));
-    }).toList();
-    return new NearbyFlightSearchResponse(center, start, end, request.direction(), days);
+    long requiredSeats = (long) request.passengerCounts().adults() + request.passengerCounts().children();
+    var key = new FlightSearchCache.NearbyQuery(context.from().id(), context.to().id(),
+        request.departureDate(), request.returnDate(), request.tripType(), request.direction(),
+        today, windows, requiredSeats);
+    return cache.getNearbyOrLoad(key, () -> {
+      var rows = readTransaction.execute(status -> repository.searchNearby(new NearbyCriteria(
+          context.from().id(), context.to().id(), windows, checkedAt, requiredSeats)));
+      var days = dates.stream().map(day -> {
+        var reason = disabledReason(day, criteria, today);
+        var found = rows.getOrDefault(day, new SearchRows(0, List.of()));
+        int size = NearbyFlightSearchRequest.PAGE_SIZE;
+        return new NearbyFlightSearchResponse.Day(day, reason == null, reason,
+            flights(found.fares(), context.from(), context.to()),
+            new NearbyFlightSearchResponse.Pagination(0, size, found.total(),
+                (found.total() + size - 1) / size, found.total() > size));
+      }).toList();
+      return new NearbyFlightSearchResponse(center, start, end, request.direction(), days);
+    });
   }
 
   private DisabledReason disabledReason(LocalDate day, FlightSearchRequest request, LocalDate today) {

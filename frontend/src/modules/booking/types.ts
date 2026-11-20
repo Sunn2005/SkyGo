@@ -2,6 +2,7 @@ import type { Flight, Search } from "../flights/types";
 import type { PaymentAttempt } from "../payment/types";
 
 export type Traveller = {
+  savedPassengerId?: string;
   kind?: "adult" | "child" | "infant";
   title?: "Ông" | "Bà" | "Cô/Chị";
   companionIndex?: number;

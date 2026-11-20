@@ -285,7 +285,10 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
               ? search.count + (search.children ?? 0) + (search.infants ?? 0)
               : 1,
         },
-        (_, i) => travellers[i] ?? newTraveller(i),
+        (_, i) =>
+          owner === "guest" && accountId !== "guest"
+            ? (travellers[i] ?? newTraveller(i))
+            : newTraveller(i),
       ),
     );
 

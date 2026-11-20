@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, View } from "react-native";
+import { Keyboard, Modal, View } from "react-native";
 import { SelectField } from "./fields";
 import { Button, Label, Row, Tap } from "./ui";
 import { colors as c } from "@/shared/theme";
@@ -10,12 +10,14 @@ export function ChoiceField<T extends string>({
   options,
   onChange,
   half,
+  getOptionLabel = (option: T) => option,
 }: {
   label: string;
   value: T;
   options: readonly T[];
   onChange: (value: T) => void;
   half?: boolean;
+  getOptionLabel?: (value: T) => string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -23,8 +25,11 @@ export function ChoiceField<T extends string>({
       <SelectField
         half={half}
         label={label}
-        value={value}
-        onPress={() => setOpen(true)}
+        value={getOptionLabel(value)}
+        onPress={() => {
+          Keyboard.dismiss();
+          setOpen(true);
+        }}
       />
       <Modal
         visible={open}
@@ -58,7 +63,7 @@ export function ChoiceField<T extends string>({
             {options.map((option) => (
               <Tap
                 key={option}
-                label={option}
+                label={getOptionLabel(option)}
                 selected={option === value}
                 onPress={() => {
                   onChange(option);
@@ -71,7 +76,7 @@ export function ChoiceField<T extends string>({
                 }}
               >
                 <Row>
-                  <Label style={{ flex: 1 }}>{option}</Label>
+                  <Label style={{ flex: 1 }}>{getOptionLabel(option)}</Label>
                   {option === value && <Label color={c.primary}>✓</Label>}
                 </Row>
               </Tap>

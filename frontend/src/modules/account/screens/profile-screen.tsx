@@ -113,6 +113,22 @@ export default function ProfileScreen() {
         </View>
       )}
       {!!error && <Notice error>{error}</Notice>}
+      {user && (
+        <Tap onPress={() => router.push("/saved-passengers")}>
+          <Card>
+            <Row>
+              <Icon name="6-6816-imgUserRound" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Label weight="semibold">Hành khách đã lưu</Label>
+                <Label size={12} muted>
+                  Thêm, chỉnh sửa hoặc xóa thông tin để điền nhanh khi đặt vé.
+                </Label>
+              </View>
+              <Label color={c.primary}>›</Label>
+            </Row>
+          </Card>
+        </Tap>
+      )}
       <Tap onPress={() => router.push("/saved")}>
         <Card>
           <Row>

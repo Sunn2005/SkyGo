@@ -8,6 +8,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skygo-api-"));
 for (const [source, target] of [
   ["shared/api/client", "client"],
   ["shared/utils/date-wheel", "date-wheel"],
+  ["shared/utils/date", "date"],
   ["modules/account/types", "types"],
   ["modules/account/utils/login-destination", "login-destination"],
   ["modules/flights/data/airports", "airports"],
@@ -16,6 +17,7 @@ for (const [source, target] of [
   ["modules/account/data/api-account-service", "account"],
   ["modules/booking/data/api-booking-service", "booking-api"],
   ["modules/booking/services/live-selection", "live-selection"],
+  ["modules/booking/services/saved-passenger-service", "saved-passengers"],
 ]) {
   let text = fs.readFileSync(
     path.join(__dirname, "../src", source + ".ts"),
@@ -27,6 +29,7 @@ for (const [source, target] of [
       'const Platform = { OS: "web" };',
     )
     .replace('"@/shared/api/client"', '"./client"')
+    .replace('"@/shared/utils/date"', '"./date"')
     .replace('"../types"', '"./types"')
     .replace('"../data/airports"', '"./airports"')
     .replace('"../data/api-booking-service"', '"./booking-api"');
@@ -783,4 +786,99 @@ test("birth date wheel clamps leap days, short months and future dates", () => {
   assert.equal(current.day.at(-1), 8);
   assert.equal(dateWheelRanges("2024-02-29", min, max).day.length, 29);
   assert.equal(dateWheelRanges("2023-02-28", min, max).day.length, 28);
+});
+
+test("saved passenger API round trips profile fields and uses authenticated CRUD", async () => {
+  const { savedPassengerApi, profileInput, profileTraveller } = require(
+    path.join(dir, "saved-passengers.js"),
+  );
+  const profile = {
+    savedPassengerId: "profile/one",
+    title: "MR",
+    givenNames: "Van An",
+    surname: "Nguyen",
+    dateOfBirth: "1990-02-03",
+    gender: "MALE",
+    document: {
+      documentType: "PASSPORT",
+      number: "A1234567",
+      issuingCountryCode: "VN",
+      nationalityCountryCode: "VN",
+      expiresOn: "2035-04-05",
+    },
+  };
+  const input = profileInput(profileTraveller(profile));
+  const { savedPassengerId, ...expected } = profile;
+  assert.deepEqual(input, expected);
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return options.method === "DELETE"
+      ? new Response(null, { status: 204 })
+      : new Response(
+          JSON.stringify({
+            data:
+              options.method === "GET" && url.endsWith("saved-passengers")
+                ? []
+                : profile,
+          }),
+        );
+  };
+  await savedPassengerApi.list("owner-token");
+  await savedPassengerApi.get("owner-token", savedPassengerId);
+  await savedPassengerApi.create("owner-token", input);
+  await savedPassengerApi.update("owner-token", savedPassengerId, input);
+  await savedPassengerApi.remove("owner-token", savedPassengerId);
+  assert.ok(calls[1].url.endsWith("/saved-passengers/profile%2Fone"));
+  assert.deepEqual(
+    calls.map((c) => c.method),
+    ["GET", "GET", "POST", "PUT", "DELETE"],
+  );
+  assert.ok(
+    calls.every((c) => c.headers.Authorization === "Bearer owner-token"),
+  );
+  assert.equal(JSON.parse(calls[2].body).userId, undefined);
+  assert.equal(JSON.parse(calls[3].body).savedPassengerId, undefined);
+});
+
+test("saved profile prefill preserves trip-specific choices and never uses CCCD as a passport", () => {
+  const {
+    applySavedPassenger,
+    passengerKindOnDate,
+    profileInput,
+    profileErrors,
+  } = require(path.join(dir, "saved-passengers.js"));
+  const profile = {
+    savedPassengerId: "child",
+    title: null,
+    givenNames: "An",
+    surname: "Nguyen",
+    dateOfBirth: "2020-11-21",
+    gender: "FEMALE",
+    document: {
+      documentType: "PERSONAL_ID",
+      number: "000012345678",
+      issuingCountryCode: "VN",
+      nationalityCountryCode: null,
+      expiresOn: null,
+    },
+  };
+  const current = { kind: "child", companionIndex: 0, extraBags: { 0: 2 } };
+  const domestic = applySavedPassenger(profile, current, true);
+  assert.equal(domestic.kind, "child");
+  assert.equal(domestic.companionIndex, 0);
+  assert.deepEqual(domestic.extraBags, { 0: 2 });
+  assert.equal(domestic.title, undefined);
+  assert.equal(profileInput(domestic).document.number, "000012345678");
+  assert.deepEqual(profileErrors(domestic), {});
+  const international = applySavedPassenger(profile, current, false);
+  assert.equal(international.documentType, "passport");
+  assert.equal(international.documentNumber, "");
+  assert.ok(profileErrors(international).documentNumber);
+  assert.equal(passengerKindOnDate("2014-11-21", "2026-11-20"), "child");
+  assert.equal(passengerKindOnDate("2014-11-21", "2026-11-21"), "adult");
+  assert.equal(passengerKindOnDate("2024-11-21", "2026-11-20"), "infant");
+  assert.equal(passengerKindOnDate("2024-11-21", "2026-11-21"), "child");
+  domestic.firstName = "Changed for this trip";
+  assert.equal(profile.givenNames, "An");
 });

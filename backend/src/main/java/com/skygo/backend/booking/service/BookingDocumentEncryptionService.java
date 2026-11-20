@@ -39,13 +39,28 @@ public class BookingDocumentEncryptionService {
   }
 
   public byte[] encrypt(String number, String bookingId, String passengerId) {
+    return encrypt(number, aad(bookingId, passengerId));
+  }
+
+  // Separate AAD binds reusable profiles to their account and ID, outside booking snapshots.
+  private byte[] savedAad(long user, String id) {
+    return ("skygo-saved-passenger-document|1|" + keyId + "|" + user + "|" + id).getBytes(StandardCharsets.UTF_8);
+  }
+  public byte[] encryptSavedPassenger(String number, long user, String id) {
+    return encrypt(number, savedAad(user, id));
+  }
+  public String decryptSavedPassenger(byte[] envelope, long user, String id) {
+    return decrypt(envelope, savedAad(user, id));
+  }
+
+  private byte[] encrypt(String number, byte[] associatedData) {
     var secret = key();
     try {
       byte[] nonce = new byte[12];
       random.nextBytes(nonce);
       var cipher = Cipher.getInstance("AES/GCM/NoPadding");
       cipher.init(Cipher.ENCRYPT_MODE, secret, new GCMParameterSpec(128, nonce));
-      cipher.updateAAD(aad(bookingId, passengerId));
+      cipher.updateAAD(associatedData);
       byte[] encrypted = cipher.doFinal(number.getBytes(StandardCharsets.UTF_8));
       byte[] id = keyId.getBytes(StandardCharsets.UTF_8);
       return ByteBuffer.allocate(2 + id.length + nonce.length + encrypted.length)
@@ -56,6 +71,10 @@ public class BookingDocumentEncryptionService {
   }
 
   public String decrypt(byte[] envelope, String bookingId, String passengerId) {
+    return decrypt(envelope, aad(bookingId, passengerId));
+  }
+
+  private String decrypt(byte[] envelope, byte[] associatedData) {
     var secret = key();
     try {
       var data = ByteBuffer.wrap(envelope);
@@ -71,7 +90,7 @@ public class BookingDocumentEncryptionService {
       data.get(ciphertext);
       var cipher = Cipher.getInstance("AES/GCM/NoPadding");
       cipher.init(Cipher.DECRYPT_MODE, secret, new GCMParameterSpec(128, nonce));
-      cipher.updateAAD(aad(bookingId, passengerId));
+      cipher.updateAAD(associatedData);
       return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
     } catch (GeneralSecurityException | RuntimeException ex) {
       throw new BookingException(409, "BOOKING_DOCUMENT_INVALID", "Dữ liệu giấy tờ không hợp lệ.");

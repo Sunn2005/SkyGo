@@ -29,6 +29,16 @@ class BookingDocumentEncryptionServiceTest {
   }
 
   @Test
+  void savedProfilesBindCiphertextToOwnerAndIdAndCannotBeUsedAsBookingDocuments() {
+    var service = new BookingDocumentEncryptionService(KEY, "test-v1");
+    byte[] encrypted = service.encryptSavedPassenger("000012345678", 1, "profile-a");
+    assertEquals("000012345678", service.decryptSavedPassenger(encrypted, 1, "profile-a"));
+    assertThrows(BookingException.class, () -> service.decryptSavedPassenger(encrypted, 2, "profile-a"));
+    assertThrows(BookingException.class, () -> service.decryptSavedPassenger(encrypted, 1, "profile-b"));
+    assertThrows(BookingException.class, () -> service.decrypt(encrypted, "1", "profile-a"));
+  }
+
+  @Test
   void refusesMissingKey() {
     var service=new BookingDocumentEncryptionService("","v1");
     assertEquals("DOCUMENT_ENCRYPTION_UNAVAILABLE",assertThrows(BookingException.class,

@@ -1,14 +1,14 @@
 import { useResponsiveLayout } from "@/shared/hooks/use-responsive-layout";
 import { useState, useRef } from "react";
 import { View } from "react-native";
-import { Host, Picker } from "@expo/ui";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import { bookingErrors, isDomestic } from "../services/booking-rules";
 import { ActionBar } from "@/modules/booking/components/action-bar";
-import { DateField } from "@/shared/components/date-field";
-import { ChoiceField } from "@/shared/components/choice-field";
+import { PassengerIdentityFields } from "../components/passenger-identity-fields";
+import { SavedPassengerControl } from "../components/saved-passenger-control";
 import { Field } from "@/shared/components/fields";
+import { ChoiceField } from "@/shared/components/choice-field";
 import { Icon, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { TripSummary } from "@/modules/booking/components/trip-summary";
@@ -16,7 +16,7 @@ import { colors as c, space } from "@/shared/theme";
 
 export default function TravellerScreen() {
   const b = useBooking();
-  const { stackFields, stackDates } = useResponsiveLayout();
+  const { stackFields } = useResponsiveLayout();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const locked = useRef(false);
   const [pending, setPending] = useState(false);
@@ -99,6 +99,19 @@ export default function TravellerScreen() {
               Nhập họ tên chính xác như trên CCCD hoặc hộ chiếu.
             </Label>
           </View>
+          <SavedPassengerControl
+            key={`${b.accountId}:${i}`}
+            traveller={p}
+            travellers={b.travellers}
+            index={i}
+            departure={b.search.date}
+            domestic={isDomestic(b.search)}
+            onChange={(patch) => {
+              b.updateTraveller(i, patch);
+              setConfirmed(false);
+              setErrors({});
+            }}
+          />
           {(p.kind ?? "adult") === "adult" && (
             <Row>
               {(["Ông", "Bà", "Cô/Chị"] as const).map((title) => (
@@ -123,176 +136,39 @@ export default function TravellerScreen() {
           )}
           {p.kind === "infant" && (
             <View style={{ gap: 6 }}>
-              <Label size={12}>Người lớn đi kèm · Không có ghế riêng</Label>
-              <Host matchContents colorScheme="light" seedColor={c.primary}>
-                <Picker
-                  selectedValue={p.companionIndex ?? 0}
-                  onValueChange={(value) =>
-                    b.updateTraveller(i, { companionIndex: value })
-                  }
-                >
-                  {b.travellers.map((adult, index) =>
-                    (adult.kind ?? "adult") === "adult" ? (
-                      <Picker.Item
-                        key={index}
-                        value={index}
-                        label={
-                          `${adult.lastName} ${adult.firstName}`.trim() ||
-                          `Người lớn ${index + 1}`
-                        }
-                      />
-                    ) : null,
-                  )}
-                </Picker>
-              </Host>
+              <ChoiceField
+                label="Người giám hộ"
+                value={String(p.companionIndex ?? 0)}
+                options={b.travellers.flatMap((adult, index) =>
+                  (adult.kind ?? "adult") === "adult" ? [String(index)] : [],
+                )}
+                getOptionLabel={(value) => {
+                  const index = Number(value);
+                  const adult = b.travellers[index];
+                  const name = adult
+                    ? `${adult.lastName} ${adult.firstName}`.trim()
+                    : "";
+                  return name || "Chưa có thông tin";
+                }}
+                onChange={(value) =>
+                  b.updateTraveller(i, { companionIndex: Number(value) })
+                }
+              />
               {!!errors[`${i}-companionIndex`] && (
                 <Notice error>{errors[`${i}-companionIndex`]}</Notice>
               )}
             </View>
           )}
-          <Row
-            style={{
-              alignItems: "stretch",
-              flexDirection: stackFields ? "column" : "row",
-            }}
-          >
-            <Field
-              half={!stackFields}
-              label="Tên đệm và tên"
-              value={p.firstName}
-              onChangeText={(value) =>
-                b.updateTraveller(i, { firstName: value })
-              }
-              error={errors[`${i}-firstName`]}
-              autoComplete="given-name"
-            />
-            <Field
-              half={!stackFields}
-              label="Họ"
-              value={p.lastName}
-              onChangeText={(value) =>
-                b.updateTraveller(i, { lastName: value })
-              }
-              error={errors[`${i}-lastName`]}
-              autoComplete="family-name"
-            />
-          </Row>
-          <Row
-            style={{
-              alignItems: "stretch",
-              flexDirection: stackDates ? "column" : "row",
-            }}
-          >
-            <DateField
-              half={!stackDates}
-              label="Ngày sinh"
-              value={p.birthDate}
-              onChangeText={(value) =>
-                b.updateTraveller(i, { birthDate: value })
-              }
-              error={errors[`${i}-birthDate`]}
-              pastOnly
-            />
-            <ChoiceField
-              half={!stackDates}
-              label="Giới tính"
-              value={p.gender}
-              options={["Nam", "Nữ", "Khác"] as const}
-              onChange={(gender) => b.updateTraveller(i, { gender })}
-            />
-          </Row>
-          <Label size={12} muted>
-            Loại giấy tờ
-          </Label>
-          <Host matchContents colorScheme="light" seedColor={c.primary}>
-            <Picker
-              selectedValue={p.documentType}
-              onValueChange={(value) =>
-                b.updateTraveller(i, {
-                  documentType: value as "cccd" | "passport",
-                  documentNumber: "",
-                })
-              }
-            >
-              {isDomestic(b.search) && (
-                <Picker.Item label="CCCD" value="cccd" />
-              )}
-              <Picker.Item label="Hộ chiếu" value="passport" />
-            </Picker>
-          </Host>
-          {!!errors[`${i}-documentType`] && (
-            <Notice error>{errors[`${i}-documentType`]}</Notice>
-          )}
-          {p.documentType === "passport" ? (
-            <>
-              <Row
-                style={{
-                  alignItems: "stretch",
-                  flexDirection: stackFields ? "column" : "row",
-                }}
-              >
-                <Field
-                  half={!stackFields}
-                  label="Quốc tịch (mã ISO, ví dụ VN)"
-                  value={p.nationality}
-                  onChangeText={(value) =>
-                    b.updateTraveller(i, { nationality: value })
-                  }
-                  error={errors[`${i}-nationality`]}
-                />
-                <Field
-                  half={!stackFields}
-                  label="Số hộ chiếu"
-                  value={p.documentNumber}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  maxLength={12}
-                  onChangeText={(value) =>
-                    b.updateTraveller(i, {
-                      documentNumber: value.toUpperCase(),
-                    })
-                  }
-                  error={errors[`${i}-documentNumber`]}
-                />
-              </Row>
-              <Row
-                style={{
-                  alignItems: "stretch",
-                  flexDirection: stackFields ? "column" : "row",
-                }}
-              >
-                <DateField
-                  half={!stackFields}
-                  label="Ngày hết hạn (NN/TT/NNNN)"
-                  value={p.documentExpiry}
-                  onChangeText={(value) =>
-                    b.updateTraveller(i, { documentExpiry: value })
-                  }
-                  error={errors[`${i}-documentExpiry`]}
-                />
-                <Field
-                  half={!stackFields}
-                  label="Quốc gia cấp (mã ISO, ví dụ VN)"
-                  value={p.issuingCountry}
-                  onChangeText={(value) =>
-                    b.updateTraveller(i, { issuingCountry: value })
-                  }
-                  error={errors[`${i}-issuingCountry`]}
-                />
-              </Row>
-            </>
-          ) : (
-            <Field
-              label="Số CCCD"
-              value={p.documentNumber}
-              keyboardType="number-pad"
-              maxLength={12}
-              onChangeText={(value) =>
-                b.updateTraveller(i, { documentNumber: value })
-              }
-              error={errors[`${i}-documentNumber`]}
-            />
-          )}
+          <PassengerIdentityFields
+            p={p}
+            onChange={(patch) => b.updateTraveller(i, patch)}
+            errors={Object.fromEntries(
+              Object.entries(errors)
+                .filter(([key]) => key.startsWith(`${i}-`))
+                .map(([key, value]) => [key.slice(`${i}-`.length), value]),
+            )}
+            domestic={isDomestic(b.search)}
+          />
         </View>
       ))}
       <View style={{ gap: space.xs }}>

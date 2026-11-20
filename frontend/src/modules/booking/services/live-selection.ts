@@ -45,9 +45,11 @@ export function createLiveSelection() {
       if (
         error instanceof ApiError &&
         error.status < 500 &&
-        !["PAYMENT_STATUS_UNVERIFIED", "HOLD_SWITCH_IN_PROGRESS"].includes(
-          error.code,
-        )
+        ![
+          "PAYMENT_STATUS_UNVERIFIED",
+          "HOLD_SWITCH_IN_PROGRESS",
+          "FLIGHT_SWITCH_RATE_LIMITED",
+        ].includes(error.code)
       )
         pending = null;
       throw error;

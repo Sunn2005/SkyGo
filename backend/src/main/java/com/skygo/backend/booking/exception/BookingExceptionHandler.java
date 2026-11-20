@@ -4,6 +4,7 @@ import com.skygo.backend.booking.controller.*;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,6 +19,14 @@ public class BookingExceptionHandler {
   public record Error(String code, String message, List<Detail> details, String requestId,
       String activeSeatHoldId, String bookingId) {}
   public record Envelope(Error error) {}
+
+  @ExceptionHandler(FlightSwitchRateLimitException.class)
+  public ResponseEntity<Envelope> flightSwitchLimit(FlightSwitchRateLimitException ex) {
+    return ResponseEntity.status(429)
+        .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.retryAfterSeconds()))
+        .body(new Envelope(new Error("FLIGHT_SWITCH_RATE_LIMITED", ex.getMessage(), List.of(),
+            UUID.randomUUID().toString(), null, null)));
+  }
 
   @ExceptionHandler(BookingException.class)
   public ResponseEntity<Envelope> domain(BookingException ex) {

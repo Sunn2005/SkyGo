@@ -4,6 +4,7 @@ import com.skygo.backend.auth.contract.DataResponse;
 import com.skygo.backend.auth.model.AuthSession;
 import com.skygo.backend.booking.contract.*;
 import com.skygo.backend.booking.service.SeatHoldService;
+import com.skygo.backend.booking.service.FlightSwitchRateLimiter;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.HttpStatus;
@@ -13,7 +14,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/seat-holds")
 public class SeatHoldController {
   private final SeatHoldService service;
-  public SeatHoldController(SeatHoldService service) { this.service = service; }
+  private final FlightSwitchRateLimiter switchRateLimiter;
+  public SeatHoldController(SeatHoldService service, FlightSwitchRateLimiter switchRateLimiter) {
+    this.service = service;
+    this.switchRateLimiter = switchRateLimiter;
+  }
   @GetMapping("/current")
   public DataResponse<SeatHoldResponse> current(@AuthenticationPrincipal AuthSession session) {
     return new DataResponse<>(service.current(session.user().id()));
@@ -27,12 +32,14 @@ public class SeatHoldController {
   @PutMapping("/{seatHoldId}/selection")
   public DataResponse<SeatHoldResponse> selection(@AuthenticationPrincipal AuthSession session,
       @PathVariable String seatHoldId, @Valid @RequestBody SeatHoldSelectionRequest request) {
+    switchRateLimiter.check(session.user().id());
     return new DataResponse<>(service.selection(session.user().id(), seatHoldId, request));
   }
   @PutMapping("/{seatHoldId}/legs/{direction}")
   public DataResponse<SeatHoldResponse> leg(@AuthenticationPrincipal AuthSession session,
       @PathVariable String seatHoldId, @PathVariable String direction,
       @Valid @RequestBody SeatHoldLegRequest request) {
+    switchRateLimiter.check(session.user().id());
     return new DataResponse<>(service.leg(session.user().id(), seatHoldId, direction, request));
   }
   @PutMapping("/{seatHoldId}/passenger-counts")

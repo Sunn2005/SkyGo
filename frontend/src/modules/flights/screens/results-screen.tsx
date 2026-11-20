@@ -17,6 +17,7 @@ import { FlightSortControl } from "../components/flight-sort-control";
 import { FlightDateStrip } from "../components/flight-date-strip";
 import { mergeNearbyDays, nearbyWindowSearch } from "../services/nearby-days";
 import { ResultsHeader } from "../components/results-header";
+import { LoginRequiredDialog } from "../components/login-required-dialog";
 import { colors as c } from "@/shared/theme";
 import {
   HoldConfirmationRequired,
@@ -41,6 +42,10 @@ export default function ResultsScreen() {
   }>();
   const b = useBooking();
   const { session } = useAccount();
+  const [loginChoice, setLoginChoice] = useState<NonNullable<
+    typeof b.pendingFlight
+  > | null>(null);
+  const openingLogin = useRef(false);
   const [existingBookingId, setExistingBookingId] = useState<string | null>(
     null,
   );
@@ -75,6 +80,8 @@ export default function ResultsScreen() {
   const selecting = useRef(false);
   const [pendingSelection, setPendingSelection] = useState(false);
   const [notice, setNotice] = useState("");
+  const [switchRetryUntil, setSwitchRetryUntil] = useState(0);
+  const [switchWaitSeconds, setSwitchWaitSeconds] = useState(0);
   const [retry, setRetry] = useState(0);
   const activeDirection = search.type === "one-way" ? "OUTBOUND" : direction;
   const { type, from, to, date, secondDate, count, children, infants } = search;
@@ -90,6 +97,23 @@ export default function ResultsScreen() {
     search.cabin,
   ]);
   const [previousSearchKey, setPreviousSearchKey] = useState(searchKey);
+  useEffect(() => {
+    if (!switchRetryUntil) return;
+    const updateWait = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((switchRetryUntil - Date.now()) / 1000),
+      );
+      setSwitchWaitSeconds(remaining);
+      if (!remaining) {
+        setSwitchRetryUntil(0);
+        setNotice("");
+      }
+    };
+    updateWait();
+    const timer = setInterval(updateWait, 1000);
+    return () => clearInterval(timer);
+  }, [switchRetryUntil]);
   // Reset before committing effects so a new search never requests the old page.
   if (previousSearchKey !== searchKey) {
     setPreviousSearchKey(searchKey);
@@ -101,6 +125,7 @@ export default function ResultsScreen() {
   useFocusEffect(
     useCallback(() => {
       void retry;
+      openingLogin.current = false;
       const controller = new AbortController();
       requestScope.current = controller;
       moreBusy.current = false;
@@ -302,16 +327,14 @@ export default function ResultsScreen() {
     selectionSearch = effectiveSearch,
   ) => {
     if (selecting.current) return;
+    if (switchRetryUntil > Date.now()) return;
     if (b.accountId === "guest") {
-      b.setPendingFlight({
+      b.setPendingFlight(null);
+      setLoginChoice({
         flight: { ...flight, cabin },
         index,
         searchKey: JSON.stringify(search),
         selectionSearch,
-      });
-      router.push({
-        pathname: "/login",
-        params: { returnTo: "flight-selection" },
       });
       return;
     }
@@ -334,6 +357,14 @@ export default function ResultsScreen() {
         setNotice("Đã giữ chuyến đi. Vui lòng chọn chuyến về.");
       } else router.push("/traveller");
     } catch (cause) {
+      if (
+        cause instanceof ApiError &&
+        cause.code === "FLIGHT_SWITCH_RATE_LIMITED"
+      ) {
+        const seconds = cause.retryAfterSeconds ?? 60;
+        setSwitchRetryUntil(Date.now() + seconds * 1000);
+        setSwitchWaitSeconds(seconds);
+      }
       if (cause instanceof HoldConfirmationRequired) {
         setRetryChoice(null);
         setConfirmation({
@@ -496,6 +527,23 @@ export default function ResultsScreen() {
         </View>
       }
     >
+      <LoginRequiredDialog
+        visible={Boolean(loginChoice) && !session}
+        onDismiss={() => {
+          setLoginChoice(null);
+          b.setPendingFlight(null);
+        }}
+        onLogin={() => {
+          if (!loginChoice || openingLogin.current) return;
+          openingLogin.current = true;
+          b.setPendingFlight(loginChoice);
+          setLoginChoice(null);
+          router.push({
+            pathname: "/login",
+            params: { returnTo: "flight-selection" },
+          });
+        }}
+      />
       {loading ? (
         <Notice>Đang tìm chuyến bay…</Notice>
       ) : error ? (
@@ -511,7 +559,14 @@ export default function ResultsScreen() {
           <Label size={13} muted>
             Đã gồm thuế VAT
           </Label>
-          {!!notice && <Notice>{notice}</Notice>}
+          {switchWaitSeconds > 0 ? (
+            <Notice error>
+              Bạn đổi chuyến quá nhiều lần. Vui lòng thử lại sau{" "}
+              {switchWaitSeconds} giây.
+            </Notice>
+          ) : (
+            !!notice && <Notice>{notice}</Notice>
+          )}
           {!!saved.error && (
             <>
               <Notice error>{saved.error}</Notice>
@@ -536,7 +591,7 @@ export default function ResultsScreen() {
             <Button
               secondary
               title="Thử lại lựa chọn vừa gửi"
-              disabled={pendingSelection}
+              disabled={pendingSelection || switchWaitSeconds > 0}
               onPress={() =>
                 void choose(
                   retryChoice.flight,
@@ -570,7 +625,7 @@ export default function ResultsScreen() {
                     ? "Đóng QR cũ và đổi lựa chọn"
                     : "Xác nhận thay lựa chọn hiện tại"
                 }
-                disabled={pendingSelection}
+                disabled={pendingSelection || switchWaitSeconds > 0}
                 onPress={() =>
                   void choose(
                     confirmation.flight,
@@ -653,7 +708,7 @@ export default function ResultsScreen() {
                   <Tap
                     key={cabin}
                     label={`Chọn ${flight.number} ${cabin}`}
-                    disabled={pendingSelection}
+                    disabled={pendingSelection || switchWaitSeconds > 0}
                     onPress={() => void choose(flight, cabin)}
                     style={{
                       flex: 1,

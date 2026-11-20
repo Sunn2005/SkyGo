@@ -8,6 +8,7 @@ import com.skygo.backend.booking.contract.PaymentLinkResponse;
 import com.skygo.backend.booking.service.PaymentLinkService;
 import com.skygo.backend.booking.service.ResumePaymentService;
 import com.skygo.backend.booking.service.BookingHoldSwitchService;
+import com.skygo.backend.booking.service.FlightSwitchRateLimiter;
 import com.skygo.backend.booking.contract.BookingHoldSwitchRequest;
 import com.skygo.backend.booking.contract.BookingHoldSwitchResponse;
 import com.skygo.backend.booking.contract.ResumePaymentRequest;
@@ -21,15 +22,19 @@ public class BookingPaymentController {
   private final ResumePaymentService service;
   private final PaymentLinkService paymentLinks;
   private final BookingHoldSwitchService switches;
-  public BookingPaymentController(ResumePaymentService service, PaymentLinkService paymentLinks,BookingHoldSwitchService switches) {
+  private final FlightSwitchRateLimiter switchRateLimiter;
+  public BookingPaymentController(ResumePaymentService service, PaymentLinkService paymentLinks,
+      BookingHoldSwitchService switches, FlightSwitchRateLimiter switchRateLimiter) {
     this.service = service;
     this.paymentLinks = paymentLinks;
     this.switches=switches;
+    this.switchRateLimiter=switchRateLimiter;
   }
   @PostMapping("/api/v1/bookings/{bookingId}/switch-hold")
   public ResponseEntity<DataResponse<BookingHoldSwitchResponse>> switchHold(
       @AuthenticationPrincipal AuthSession session,@PathVariable String bookingId,
       @RequestHeader(value="Idempotency-Key",required=false) String key,@Valid @RequestBody BookingHoldSwitchRequest request) {
+    switchRateLimiter.check(session.user().id());
     return ResponseEntity.ok().cacheControl(CacheControl.noStore())
         .body(new DataResponse<>(switches.switchHold(session.user().id(),bookingId,key,request)));
   }

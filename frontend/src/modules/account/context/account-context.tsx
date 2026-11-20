@@ -2,10 +2,15 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { AppState } from "react-native";
+import {
+  clearUserCache,
+  setCacheOwner,
+} from "@/shared/api/offline-cache";
 import { accountService } from "../data/api-account-service";
 import {
   AccountError,
@@ -26,6 +31,15 @@ const AccountContext = createContext<AccountContextValue | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AccountSession | null>(null);
+  const userId = session?.user.id ?? null;
+  const previousUserId = useRef<string | null>(null);
+  useEffect(() => {
+    // Scope the offline cache to the signed-in user; drop it only on a real
+    // sign-out (not at app start, when no session exists yet).
+    setCacheOwner(userId);
+    if (!userId && previousUserId.current) clearUserCache();
+    previousUserId.current = userId;
+  }, [userId]);
   useEffect(() => {
     if (!session) return;
     const expire = () => {

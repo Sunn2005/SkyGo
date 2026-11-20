@@ -1,4 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
+import { withOfflineCache } from "@/shared/api/offline-cache";
 import { rememberAirports } from "../data/airports";
 import type { Flight, Search, Cabin } from "../types";
 export type Page<T> = {
@@ -37,7 +38,9 @@ export type ApiFlight = {
   }[];
 };
 export const loadRegions = (signal?: AbortSignal) =>
-  apiRequest<Region[]>("/api/v1/regions", { signal });
+  withOfflineCache("public", "regions", () =>
+    apiRequest<Region[]>("/api/v1/regions", { signal }),
+  );
 export async function loadAirports(
   options: { keyword?: string; origin?: string; page?: number },
   signal?: AbortSignal,
@@ -48,9 +51,11 @@ export async function loadAirports(
   });
   if (options.keyword?.trim()) query.set("keyword", options.keyword.trim());
   if (options.origin) query.set("origin", options.origin);
-  const result = await apiRequest<Page<ApiAirport>>(
-    `/api/v1/airports?${query}`,
-    { signal, unwrap: false },
+  const result = await withOfflineCache("public", `airports?${query}`, () =>
+    apiRequest<Page<ApiAirport>>(`/api/v1/airports?${query}`, {
+      signal,
+      unwrap: false,
+    }),
   );
   rememberAirports(result.data);
   return result;

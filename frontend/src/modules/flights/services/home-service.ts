@@ -1,4 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
+import { withOfflineCache } from "@/shared/api/offline-cache";
 
 type Airport = { code: string; city: string };
 export type HomeRoute = {
@@ -26,4 +27,6 @@ export type HomeData = {
   } | null;
 };
 export const loadHome = (token?: string, signal?: AbortSignal) =>
-  apiRequest<HomeData>("/api/v1/home", { token, signal });
+  withOfflineCache(token ? "user" : "public", "home", () =>
+    apiRequest<HomeData>("/api/v1/home", { token, signal }),
+  );

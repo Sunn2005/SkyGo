@@ -1,4 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
+import { withOfflineCache } from "@/shared/api/offline-cache";
 
 export type BookingSummary = {
   bookingId: string;
@@ -37,13 +38,15 @@ export const listBookings = (
   filter: BookingFilter = "all",
   signal?: AbortSignal,
 ) =>
-  apiRequest<BookingPage>(
-    `/api/v1/bookings?page=${page}&size=20&status=${filter}`,
-    {
-      token,
-      signal,
-      unwrap: false,
-    },
+  withOfflineCache("user", `bookings:${filter}:${page}`, () =>
+    apiRequest<BookingPage>(
+      `/api/v1/bookings?page=${page}&size=20&status=${filter}`,
+      {
+        token,
+        signal,
+        unwrap: false,
+      },
+    ),
   );
 
 export const isSummaryPaid = (item: BookingSummary) =>

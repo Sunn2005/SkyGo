@@ -1,4 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
+import { withOfflineCache } from "@/shared/api/offline-cache";
 
 export type BookingPrice = {
   fareSubtotal: number;
@@ -117,7 +118,9 @@ export const paymentApi = {
       body: confirmation,
     }),
   detail: (token: string, id: string, signal?: AbortSignal) =>
-    apiRequest<BookingDetail>(bookingPath(id), { token, signal }),
+    withOfflineCache("user", `booking:${id}`, () =>
+      apiRequest<BookingDetail>(bookingPath(id), { token, signal }),
+    ),
   link: (token: string, id: string, signal?: AbortSignal) =>
     apiRequest<PaymentLink>(`${bookingPath(id)}/payment-link`, {
       token,

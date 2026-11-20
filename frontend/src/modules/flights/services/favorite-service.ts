@@ -1,4 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
+import { withOfflineCache } from "@/shared/api/offline-cache";
 import type { ApiFlight, Page } from "./flight-service";
 
 export type SavedFlight = {
@@ -11,11 +12,12 @@ const path = (id: string) =>
   `/api/v1/favorite-flights/${encodeURIComponent(id)}`;
 export const favoriteApi = {
   list: (token: string, page = 0, signal?: AbortSignal) =>
-    apiRequest<FavoritePage>(`/api/v1/favorite-flights?page=${page}&size=20`, {
-      token,
-      signal,
-      unwrap: false,
-    }),
+    withOfflineCache("user", `favorites:${page}`, () =>
+      apiRequest<FavoritePage>(
+        `/api/v1/favorite-flights?page=${page}&size=20`,
+        { token, signal, unwrap: false },
+      ),
+    ),
   save: (token: string, id: string) =>
     apiRequest<void>(path(id), { token, method: "PUT" }),
   remove: (token: string, id: string) =>

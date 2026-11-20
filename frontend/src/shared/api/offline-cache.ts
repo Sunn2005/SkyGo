@@ -44,7 +44,7 @@ function readIndex(): string[] {
   }
 }
 
-export function cacheRead<T>(scope: CacheScope, key: string): T | undefined {
+function readEntry<T>(scope: CacheScope, key: string): Entry<T> | undefined {
   const full = storageKey(scope, key);
   if (!full) return undefined;
   const raw = safe(() => localStorage.getItem(full));
@@ -52,10 +52,14 @@ export function cacheRead<T>(scope: CacheScope, key: string): T | undefined {
   try {
     const entry = JSON.parse(raw) as Entry<T>;
     if (Date.now() - entry.savedAt > MAX_AGE_MS) return undefined;
-    return entry.value;
+    return entry;
   } catch {
     return undefined;
   }
+}
+
+export function cacheRead<T>(scope: CacheScope, key: string): T | undefined {
+  return readEntry<T>(scope, key)?.value;
 }
 
 export function cacheWrite<T>(scope: CacheScope, key: string, value: T) {
@@ -93,12 +97,20 @@ function isUnreachable(error: unknown) {
 /**
  * Fetch fresh data and cache it. If the server is unreachable, fall back to the
  * last cached copy; if there is none, rethrow the original error.
+ * With `freshForMs`, a cached copy younger than that is returned without any
+ * request (for near-static catalogs such as airports and regions).
  */
 export async function withOfflineCache<T>(
   scope: CacheScope,
   key: string,
   fetcher: () => Promise<T>,
+  options: { freshForMs?: number } = {},
 ): Promise<T> {
+  if (options.freshForMs) {
+    const entry = readEntry<T>(scope, key);
+    if (entry && Date.now() - entry.savedAt < options.freshForMs)
+      return entry.value;
+  }
   try {
     const value = await fetcher();
     cacheWrite(scope, key, value);

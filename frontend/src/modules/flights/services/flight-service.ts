@@ -37,9 +37,12 @@ export type ApiFlight = {
     price: { amount: number; currency: string; includesVat: boolean };
   }[];
 };
+// Airports and regions rarely change: reuse the on-device copy for a day.
+const CATALOG_FRESH_MS = 24 * 60 * 60 * 1000;
 export const loadRegions = (signal?: AbortSignal) =>
   withOfflineCache("public", "regions", () =>
     apiRequest<Region[]>("/api/v1/regions", { signal }),
+    { freshForMs: CATALOG_FRESH_MS },
   );
 export async function loadAirports(
   options: { keyword?: string; origin?: string; page?: number },
@@ -56,6 +59,7 @@ export async function loadAirports(
       signal,
       unwrap: false,
     }),
+    { freshForMs: CATALOG_FRESH_MS },
   );
   rememberAirports(result.data);
   return result;

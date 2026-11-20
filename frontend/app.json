@@ -14,9 +14,8 @@
     "android": {
       "package": "com.skygo.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
@@ -26,6 +25,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#FFFFFF",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ],
       "expo-image",
       "expo-font",
       "expo-sqlite",

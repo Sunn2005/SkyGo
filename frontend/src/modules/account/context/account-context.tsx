@@ -13,6 +13,10 @@ import {
 } from "@/shared/api/offline-cache";
 import { accountService } from "../data/api-account-service";
 import {
+  readStoredSession,
+  writeStoredSession,
+} from "../data/session-storage";
+import {
   AccountError,
   type AccountSession,
   type AccountUser,
@@ -30,16 +34,41 @@ type AccountContextValue = {
 const AccountContext = createContext<AccountContextValue | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AccountSession | null>(null);
+  // Restored synchronously so the first screen already fetches as the user.
+  const [session, setSession] = useState<AccountSession | null>(
+    readStoredSession,
+  );
   const userId = session?.user.id ?? null;
-  const previousUserId = useRef<string | null>(null);
+  // Set during render (idempotent): child effects run before this provider's
+  // effects, so the first data load must already see the right cache owner.
+  setCacheOwner(userId);
+  const previousUserId = useRef<string | null>(userId);
   useEffect(() => {
-    // Scope the offline cache to the signed-in user; drop it only on a real
-    // sign-out (not at app start, when no session exists yet).
-    setCacheOwner(userId);
+    // Drop user data only on a real sign-out / expiry.
     if (!userId && previousUserId.current) clearUserCache();
     previousUserId.current = userId;
   }, [userId]);
+  useEffect(() => writeStoredSession(session), [session]);
+  // Check a restored token once against the server (revoked elsewhere, user
+  // edited). Network failures keep the session so the app works offline.
+  const restoredToken = useRef(session?.accessToken);
+  useEffect(() => {
+    const token = restoredToken.current;
+    if (!token) return;
+    accountService
+      .me(token)
+      .then((user) =>
+        setSession((current) =>
+          current?.accessToken === token ? { ...current, user } : current,
+        ),
+      )
+      .catch((error: unknown) => {
+        if (error instanceof AccountError && error.code === "UNAUTHENTICATED")
+          setSession((current) =>
+            current?.accessToken === token ? null : current,
+          );
+      });
+  }, []);
   useEffect(() => {
     if (!session) return;
     const expire = () => {

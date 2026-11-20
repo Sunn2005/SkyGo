@@ -2,6 +2,8 @@ import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Platform, View } from "react-native";
 import { useFonts } from "expo-font";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
 import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
 import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
@@ -17,6 +19,12 @@ import { BottomNav } from "@/shared/components/bottom-nav";
 import { colors } from "@/shared/theme";
 import { AiChatProvider } from "@/modules/ai/context/chat-context";
 
+// Keep the native splash visible until fonts are ready (and for a short minimum
+// so the logo is actually seen).
+const SPLASH_MIN_MS = 1200;
+const splashStartedAt = Date.now();
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     Inter_400Regular,
@@ -24,6 +32,14 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  useEffect(() => {
+    if (!loaded && !error) return;
+    const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - splashStartedAt));
+    const timer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [loaded, error]);
   if (!loaded && !error)
     return (
       <View

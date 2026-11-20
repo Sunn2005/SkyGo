@@ -1,5 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
-import { withOfflineCache } from "@/shared/api/offline-cache";
+import { cacheRead, withOfflineCache } from "@/shared/api/offline-cache";
 
 type Airport = { code: string; city: string };
 export type HomeRoute = {
@@ -26,7 +26,10 @@ export type HomeData = {
     status: string;
   } | null;
 };
-export const loadHome = (token?: string, signal?: AbortSignal) =>
+/** Last home payload saved on device, shown instantly while loadHome refreshes. */
+export const cachedHome = (token?: string) =>
+  cacheRead<HomeData>(token ? "user" : "public", "home") ?? null;
+export const loadHome =(token?: string, signal?: AbortSignal) =>
   withOfflineCache(token ? "user" : "public", "home", () =>
     apiRequest<HomeData>("/api/v1/home", { token, signal }),
   );

@@ -10,6 +10,7 @@ import { rememberAirports } from "@/modules/flights/data/airports";
 import { useAccount } from "@/modules/account/context/account-context";
 import { API_BASE_URL } from "@/shared/api/client";
 import {
+  cachedHome,
   loadHome,
   type HomeData,
   type HomeRoute,
@@ -28,7 +29,10 @@ export default function HomeScreen() {
   const { session } = useAccount();
   const [notifications, setNotifications] = useState(false);
   const [error, setError] = useState("");
-  const [data, setData] = useState<HomeData | null>(null);
+  // Start from the on-device copy so the screen is filled on the first frame.
+  const [data, setData] = useState<HomeData | null>(() =>
+    cachedHome(session?.accessToken),
+  );
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
   useFocusEffect(
@@ -37,7 +41,8 @@ export default function HomeScreen() {
       void reload;
       const controller = new AbortController();
       setLoading(true);
-      setData(null);
+      // Show cached data for this account (or guest) while refreshing.
+      setData(cachedHome(session?.accessToken));
       setError("");
       loadHome(session?.accessToken, controller.signal)
         .then((result) => {

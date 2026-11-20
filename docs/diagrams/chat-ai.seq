@@ -1,0 +1,60 @@
+# Nguồn: docs/ai/chat-api.md, docs/ai/mobile-chat.md và AiChatService.java.
+title: SkyGo — Chat AI với Gemini và dữ liệu tra cứu
+actor khach "Người dùng"
+boundary app "Trợ lý SkyGo"
+control chat "AiChatService"
+control tools "AiReadTools"
+entity repo "Kho dữ liệu AI" "SQL và MariaDB Vector"
+actor gemini "Gemini"
+
+khach -> app : Gửi câu hỏi
+app -> chat : POST /api/v1/ai/chat\nmessage, history và Bearer token nếu có phiên
+loop: Đến khi có kết quả, tối đa 2 vòng tool và 4 lượt tool
+chat -> gemini : Gửi câu hỏi, ngữ cảnh và tool được phép\nKèm kết quả tool từ vòng trước nếu có
+alt: Gemini yêu cầu gọi tool
+gemini --> chat : Tên tool và tham số
+chat -> tools : Kiểm tra tham số, thực thi theo phiên hiện tại
+alt: searchFlights
+tools -> repo : Đối chiếu sân bay đang hoạt động trong SQL
+alt: Tên sân bay chưa khớp danh mục
+tools -> gemini : Tạo embedding cho địa danh
+gemini --> tools : Vector truy vấn
+tools -> repo : Tra vector sân bay công khai\nĐối chiếu ứng viên với danh mục SQL
+repo --> tools : Ứng viên sân bay
+end
+alt: Xác định được tuyến và ngày
+tools -> repo : Đọc chuyến, hạng vé, giá và ghế còn
+repo --> tools : Các lựa chọn chuyến và hạng vé
+else: Thiếu dữ liệu đầu vào hoặc sân bay chưa rõ
+tools --> chat : Trường cần bổ sung hoặc sân bay để chọn
+end
+else: searchRecentBookings
+alt: Có phiên đăng nhập
+tools -> repo : Đọc đơn theo userId từ AuthSession
+repo --> tools : Các đơn gần nhất của tài khoản
+else: Chưa đăng nhập
+tools --> chat : LOGIN_REQUIRED
+end
+else: searchKnowledge
+tools -> gemini : Tạo embedding cho câu truy vấn
+gemini --> tools : Vector truy vấn
+tools -> repo : Tìm tài liệu công khai trong MariaDB Vector
+repo --> tools : Trích đoạn và nguồn
+else: askForDetails
+tools --> chat : Trường cần bổ sung
+end
+alt: Kết quả đủ để tổng hợp
+tools --> chat : Kết quả có cấu trúc và nguồn cho lượt model sau
+else: Cần đăng nhập, cần làm rõ hoặc không có dữ liệu
+tools --> chat : Trạng thái nghiệp vụ để kết thúc vòng lặp
+end
+else: Gemini trả lời trực tiếp
+gemini --> chat : Nội dung trả lời
+end
+end
+alt: Có câu trả lời cuối và bằng chứng
+chat --> app : HTTP 200 ANSWERED, answer, sources\nvà dữ liệu thẻ chuyến / đơn
+else: Cần đăng nhập, cần làm rõ hoặc không có dữ liệu
+chat --> app : HTTP 200 với LOGIN_REQUIRED,\nNEEDS_CLARIFICATION hoặc NO_DATA
+end
+app --> khach : Hiện câu trả lời, thẻ kết quả hoặc yêu cầu phù hợp

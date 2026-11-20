@@ -1,0 +1,72 @@
+# Nguồn: frontend/docs/frontend-backend.md và backend/README.md (Booking, PayOS).
+title: SkyGo — Đặt vé và webhook PayOS
+actor khach "Hành khách"
+boundary app "Ứng dụng SkyGo"
+control api "API SkyGo"
+entity repo "Kho dữ liệu đặt vé" "Repository"
+actor payos "PayOS"
+
+khach -> app : Chọn chuyến và hạng vé
+app -> api : POST /api/v1/seat-holds
+api -> repo : Kiểm tra và giữ chỗ 15 phút
+api --> app : Mã giữ chỗ và thời hạn
+app -> api : POST /api/v1/booking-quotes
+api --> app : Báo giá hành trình
+khach -> app : Nhập thông tin hành khách
+app -> api : POST /api/v1/booking-reviews
+api --> app : reviewId, version và tổng tiền
+khach -> app : Xác nhận đặt vé
+app -> api : POST /api/v1/bookings\nreviewId, expectedVersion, Idempotency-Key
+api -> repo : Tạo đơn PENDING_PAYMENT\nvà payment PENDING
+api --> app : bookingId, mã đặt chỗ
+app -> api : GET /api/v1/bookings/{bookingId}
+api --> app : Chi tiết đơn còn hạn thanh toán
+app -> api : POST /api/v1/bookings/{bookingId}/payment-link
+api -> repo : Đọc số tiền và hạn giữ chỗ\nTạo payment_attempt nếu chưa có
+alt: Lượt giữ chỗ chưa có link PayOS
+api -> payos : Tạo link với orderCode, amount và expiredAt
+payos --> api : paymentLinkId và chuỗi VietQR
+api -> repo : Lưu thông tin link cho lượt giữ chỗ
+else: Đã có link cho lượt giữ chỗ
+repo --> api : Link đã lưu với thời hạn hiện tại
+end
+api --> app : VietQR, số tiền và hạn thanh toán
+app --> khach : Hiện QR để chuyển khoản
+app -> api : Bắt đầu kiểm tra GET chi tiết đơn
+api --> app : Trạng thái thanh toán hiện tại
+khach -> payos : Thanh toán qua ứng dụng ngân hàng
+payos -> api : POST /api/v1/payos/webhook\nDữ liệu giao dịch và chữ ký
+alt: Chữ ký HMAC không hợp lệ
+api --> payos : HTTP 400
+else: Chữ ký hợp lệ, giao dịch thành công, orderCode khớp
+api -> repo : Khoá đơn, đối chiếu attempt và tra reference
+alt: Reference đã xử lý, dữ liệu trùng khớp
+api --> payos : HTTP 200
+else: Attempt CREATING, chưa lưu paymentLinkId
+api --> payos : HTTP 503 để PayOS gửi lại
+else: Giao dịch mới, đã lưu paymentLinkId
+api -> repo : Ghi giao dịch theo reference duy nhất
+alt: Link và tiền tệ khớp, đủ đúng tiền, hold còn hiệu lực
+api -> repo : Chốt PAID / SUCCEEDED, cập nhật hold\nPhát hành vé và hóa đơn trong cùng transaction
+else: Nhận thiếu tiền, đơn vẫn hợp lệ
+api -> repo : Giữ trạng thái chờ, cộng dồn tiền nhận
+else: Nhận muộn, dư tiền hoặc sai link / tiền tệ
+api -> repo : Ghi nhận cần đối soát
+end
+api --> payos : HTTP 200
+end
+else: Giao dịch không thành công hoặc orderCode không tồn tại
+api --> payos : HTTP 200
+end
+loop: App tiếp tục kiểm tra mỗi 5 giây khi màn QR còn hoạt động
+app -> api : GET /api/v1/bookings/{bookingId}
+api -> repo : Đọc trạng thái đơn và thanh toán
+api --> app : Trạng thái mới nhất và vé nếu đã phát hành
+alt: PAID và SUCCEEDED
+app --> khach : Mở màn thành công và hiển thị vé
+else: Hết hạn hoặc cần đối soát
+app --> khach : Dừng kiểm tra và hiển thị trạng thái
+else: Vẫn chờ thanh toán
+app --> khach : Tiếp tục hiển thị màn QR
+end
+end

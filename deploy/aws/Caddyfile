@@ -1,0 +1,7 @@
+# {$SITE_HOST} is the sslip.io name of the server, e.g. 13-229-10-5.sslip.io.
+# Caddy obtains and renews the Let's Encrypt certificate automatically
+# (ports 80 and 443 must be open to the internet).
+{$SITE_HOST} {
+	encode gzip
+	reverse_proxy backend:8080
+}

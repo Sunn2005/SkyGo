@@ -1,0 +1,11 @@
+target/
+.idea/
+.git/
+.mvn/wrapper/maven-wrapper.jar
+node_modules/
+# Never bake secrets into the image.
+.env
+.env.*
+*.iml
+.DS_Store
+HELP.md

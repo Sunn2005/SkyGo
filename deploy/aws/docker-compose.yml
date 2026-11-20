@@ -1,0 +1,80 @@
+name: skygo
+
+# Backend + MariaDB 11.8 (VECTOR needs >= 11.7) + Redis + Caddy (automatic HTTPS).
+# Only Caddy publishes ports; the database and backend stay on the private network.
+services:
+  mariadb:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?set MARIADB_ROOT_PASSWORD in .env}
+      MARIADB_DATABASE: skygo
+      MARIADB_USER: skygo_app
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?set MARIADB_PASSWORD in .env}
+    # Sized for a 2 GB host shared with the JVM.
+    command:
+      - --innodb-buffer-pool-size=256M
+      - --max-connections=60
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 700m
+
+  redis:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    mem_limit: 100m
+
+  backend:
+    build:
+      context: ../../backend
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      SERVER_PORT: 8080
+      DB_URL: jdbc:mariadb://mariadb:3306/skygo
+      DB_USERNAME: skygo_app
+      DB_PASSWORD: ${MARIADB_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-24h}
+      SKYGO_REVIEW_ENCRYPTION_KEY: ${SKYGO_REVIEW_ENCRYPTION_KEY:-}
+      SKYGO_BOOKING_DOCUMENT_ENCRYPTION_KEY: ${SKYGO_BOOKING_DOCUMENT_ENCRYPTION_KEY:-}
+      SKYGO_AI_ENABLED: ${SKYGO_AI_ENABLED:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
+      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
+      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
+      PAYOS_RETURN_URL: ${PAYOS_RETURN_URL:-skygo://payment/success}
+      PAYOS_CANCEL_URL: ${PAYOS_CANCEL_URL:-skygo://payment/cancel}
+    mem_limit: 1100m
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_HOST: ${SITE_HOST:?set SITE_HOST in .env, e.g. 13-229-10-5.sslip.io}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 100m
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

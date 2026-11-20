@@ -21,15 +21,19 @@ public final class MariaDbVectorSchema {
           """, String.class);
       if (!("vector(" + ai.embeddingDimensions() + ")").equalsIgnoreCase(column)) throw incompatible();
       String ddl = jdbc.queryForObject("SHOW CREATE TABLE ai_document", (rs, row) -> rs.getString(2));
-      boolean cosineIndex = ddl != null && ddl.lines()
-          .map(line -> line.toLowerCase(Locale.ROOT).replace("`", "").replaceAll("\\s+", ""))
-          .anyMatch(line -> line.startsWith("vectorkey") && line.contains("(embedding)") && line.contains("distance=cosine"));
-      if (!cosineIndex) throw incompatible();
+      if (!hasCosineVectorIndex(ddl)) throw incompatible();
     } catch (AiException ex) { throw ex; }
     catch (RuntimeException ex) {
       throw new AiException(AiException.Code.VECTOR_STORE_UNAVAILABLE,
           "Chưa đọc được bảng vector MariaDB. Cần MariaDB 11.7.1+ và migration V12 đã chạy thành công.");
     }
+  }
+
+  /** MariaDB 11.8 prints {@code `DISTANCE`='cosine'} (quoted); older output was {@code DISTANCE=cosine}. */
+  static boolean hasCosineVectorIndex(String ddl) {
+    return ddl != null && ddl.lines()
+        .map(line -> line.toLowerCase(Locale.ROOT).replaceAll("[`'\"\\s]", ""))
+        .anyMatch(line -> line.startsWith("vectorkey") && line.contains("(embedding)") && line.contains("distance=cosine"));
   }
 
   private static AiException incompatible() {

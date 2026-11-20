@@ -38,13 +38,18 @@ import {
 } from "../services/payment-state";
 import { SaveQrButton } from "../components/save-qr-button";
 import { paymentQrImage } from "../services/qr-code";
+import { PaymentExitDialog } from "../components/payment-exit-dialog";
+import { usePaymentExit } from "../services/use-payment-exit";
+import type { PaymentReturnTo } from "../services/payment-navigation";
 
 export default function LivePayosScreen({
   bookingId,
   returnOutcome,
+  returnTo = "booking",
 }: {
   bookingId: string;
   returnOutcome?: "success" | "cancel";
+  returnTo?: PaymentReturnTo;
 }) {
   const b = useBooking();
   const { session } = useAccount();
@@ -329,13 +334,23 @@ export default function LivePayosScreen({
       return null;
     }
   }, [qrPayload]);
+  const exit = usePaymentExit(returnTo, paid, busy || loading);
   return (
-    <Screen
-      design
-      title="Thanh toán QR"
-      step={2}
-      onBack={() => router.replace("/booking")}
-    >
+    <Screen design title="Thanh toán QR" step={2} onBack={exit.requestBack}>
+      <PaymentExitDialog
+        visible={exit.visible}
+        remaining={
+          booking?.seatHold?.status === "ACTIVE" &&
+          !expired &&
+          !closed &&
+          !reconciling
+            ? remaining
+            : 0
+        }
+        busy={busy || loading}
+        onStay={exit.stay}
+        onLeave={exit.leave}
+      />
       {loading && <Notice>Đang lấy thông tin thanh toán…</Notice>}
       {returnOutcome && !paid && (
         <Notice>

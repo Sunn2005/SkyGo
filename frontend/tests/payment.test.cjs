@@ -9,6 +9,7 @@ global.__qrSaveMock = {};
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skygo-payment-"));
 for (const [source, target] of [
   ["shared/api/client", "client"],
+  ["shared/api/offline-cache", "offline-cache"],
   ["modules/payment/services/payment-service", "payment-service"],
   ["modules/flights/services/home-service", "home-service"],
   ["modules/tickets/services/booking-history", "booking-history"],
@@ -24,7 +25,9 @@ for (const [source, target] of [
       'import { Platform } from "react-native";',
       "const Platform = global.__qrSavePlatform;",
     )
+    .replace('import "expo-sqlite/localStorage/install";', "")
     .replace('"@/shared/api/client"', '"./client"')
+    .replaceAll('"@/shared/api/offline-cache"', '"./offline-cache"')
     .replaceAll('"@/modules/flights/services/home-service"', '"./home-service"')
     .replaceAll(
       '"@/modules/payment/services/payment-service"',

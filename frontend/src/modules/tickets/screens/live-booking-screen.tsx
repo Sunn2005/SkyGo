@@ -107,15 +107,21 @@ export default function LiveBookingScreen({
                     ? "Liên hệ hỗ trợ"
                     : "Về trang chủ"
             }
-            onPress={() =>
-              showSuccess
+            onPress={() => {
+              if (!showSuccess && payable && data) {
+                b.selectPaymentBooking(data.bookingId);
+                router.push({
+                  pathname: "/payos",
+                  params: { returnTo: "booking" },
+                });
+                return;
+              }
+              return showSuccess
                 ? router.replace("/booking")
-                : payable
-                  ? router.push("/payos")
-                  : status?.key === "reconciliation"
-                    ? router.push("/help")
-                    : router.replace("/")
-            }
+                : status?.key === "reconciliation"
+                  ? router.push("/help")
+                  : router.replace("/");
+            }}
           />
         ) : undefined
       }

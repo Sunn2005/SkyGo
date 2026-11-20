@@ -19,6 +19,7 @@ export default function PaymentReturnScreen({
         key={livePayment.id}
         bookingId={livePayment.id}
         returnOutcome={outcome}
+        returnTo={livePayment.returnTo}
       />
     );
   return (

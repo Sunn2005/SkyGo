@@ -37,6 +37,7 @@ import type { Traveller, Booking, BookingInput } from "@/modules/booking/types";
 import { quote, flightPrice, isDomestic } from "../services/booking-rules";
 import { bookingService } from "../data/booking-service";
 import type { PaymentOutcome } from "@/modules/payment/types";
+import type { PaymentReturnTo } from "@/modules/payment/services/payment-navigation";
 
 function liveReservation(
   hold: Hold,
@@ -77,6 +78,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
     id: string;
     detail: BookingDetail | null;
     receivedAt: number;
+    returnTo: PaymentReturnTo;
   } | null>(null);
   const [quotedTotal, setQuotedTotal] = useState<number | null>(null);
   const liveBusy = useRef(false);
@@ -480,6 +482,7 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
           id: data.bookingId,
           detail: null,
           receivedAt: Date.now(),
+          returnTo: "results",
         });
         return data;
       } catch (error) {
@@ -633,8 +636,14 @@ function useBookingState(accountId: string, accountContact: AccountContact) {
       const accessToken = requireToken();
       setLivePayment((current) =>
         current?.id === id && current.token === accessToken
-          ? current
-          : { token: accessToken, id, detail: null, receivedAt: Date.now() },
+          ? { ...current, returnTo: "booking" }
+          : {
+              token: accessToken,
+              id,
+              detail: null,
+              receivedAt: Date.now(),
+              returnTo: "booking",
+            },
       );
     },
     acceptPaymentDetail: (detail: BookingDetail) => {

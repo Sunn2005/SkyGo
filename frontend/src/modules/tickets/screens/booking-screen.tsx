@@ -143,7 +143,9 @@ export default function BookingScreen() {
       {!paid && payment?.status !== "expired" && (
         <Button
           title="Tiếp tục thanh toán"
-          onPress={() => router.push("/payos")}
+          onPress={() =>
+            router.push({ pathname: "/payos", params: { returnTo: "booking" } })
+          }
         />
       )}
     </Screen>

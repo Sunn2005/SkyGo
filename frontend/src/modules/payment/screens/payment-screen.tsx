@@ -42,7 +42,12 @@ export default function PaymentScreen() {
         </Panel>
         <Button
           title="Tiếp tục thanh toán"
-          onPress={() => router.replace("/payos")}
+          onPress={() =>
+            router.replace({
+              pathname: "/payos",
+              params: { returnTo: "results" },
+            })
+          }
         />
         <Button
           secondary
@@ -69,7 +74,7 @@ export default function PaymentScreen() {
     setError("");
     try {
       await b.checkout();
-      router.push("/payos");
+      router.push({ pathname: "/payos", params: { returnTo: "results" } });
     } catch (cause) {
       setError(
         cause instanceof Error

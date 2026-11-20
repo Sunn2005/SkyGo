@@ -2,7 +2,7 @@ import LivePayosScreen from "./live-payos-screen";
 import { View } from "react-native";
 import { Image } from "expo-image";
 import { useEffect, useRef, useState } from "react";
-import { Redirect, router } from "expo-router";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useBooking } from "@/modules/booking/context/booking-context";
 import type { PaymentOutcome } from "../types";
 import { SaveQrButton } from "../components/save-qr-button";
@@ -18,17 +18,29 @@ import {
   PassengerPriceBreakdown,
   demoPassengerPrices,
 } from "../components/passenger-price-breakdown";
+import { PaymentExitDialog } from "../components/payment-exit-dialog";
+import { usePaymentExit } from "../services/use-payment-exit";
+import {
+  paymentReturnTo,
+  type PaymentReturnTo,
+} from "../services/payment-navigation";
 const demoQr = paymentQrImage("SKYGO DEMO - KHONG DUNG DE THANH TOAN");
 
 export default function PayosScreen() {
   const b = useBooking();
+  const params = useLocalSearchParams<{ returnTo?: string }>();
+  const returnTo = paymentReturnTo(params.returnTo, b.livePayment?.returnTo);
   if (b.livePayment)
     return (
-      <LivePayosScreen key={b.livePayment.id} bookingId={b.livePayment.id} />
+      <LivePayosScreen
+        key={b.livePayment.id}
+        bookingId={b.livePayment.id}
+        returnTo={returnTo}
+      />
     );
-  return <MockPayosScreen />;
+  return <MockPayosScreen returnTo={returnTo} />;
 }
-function MockPayosScreen() {
+function MockPayosScreen({ returnTo }: { returnTo: PaymentReturnTo }) {
   const b = useBooking();
   const [clock, tick] = useState(Date.now);
   useEffect(() => {
@@ -79,6 +91,7 @@ function MockPayosScreen() {
       setBusy(false);
     }
   };
+  const exit = usePaymentExit(returnTo, booking?.status === "confirmed", busy);
   if (!booking) return <Redirect href="/bookings" />;
   const remaining = payment
     ? Math.max(0, Math.ceil((Date.parse(payment.expiresAt) - clock) / 1000))
@@ -86,12 +99,14 @@ function MockPayosScreen() {
   const waiting = payment?.status === "pending";
   const reference = `SKYGO ${booking.receipt.reference}`;
   return (
-    <Screen
-      design
-      title="Thanh toán QR"
-      step={2}
-      onBack={() => router.replace("/bookings")}
-    >
+    <Screen design title="Thanh toán QR" step={2} onBack={exit.requestBack}>
+      <PaymentExitDialog
+        visible={exit.visible}
+        remaining={waiting ? remaining : 0}
+        busy={busy}
+        onStay={exit.stay}
+        onLeave={exit.leave}
+      />
       <Row style={{ justifyContent: "space-between" }}>
         <Label size={12} color={c.primary}>
           {waiting

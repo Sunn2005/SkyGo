@@ -43,6 +43,17 @@ export type BaggageLeg = {
   }[];
 };
 export type Review = {
+  passengers: {
+    clientPassengerId: string;
+    passengerType: string;
+    givenNames: string;
+    surname: string;
+    price: {
+      fareSubtotal: number;
+      extraBaggageAmount: number;
+      subtotal: number;
+    };
+  }[];
   reviewId: string;
   version: number;
   expiresAt: string;

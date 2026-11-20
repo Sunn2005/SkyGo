@@ -20,6 +20,7 @@ import { Screen } from "@/shared/components/screen";
 import { Button, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Panel, InfoRow } from "@/modules/booking/components/design";
 import { money } from "@/shared/utils/format";
+import { PassengerPriceBreakdown } from "../components/passenger-price-breakdown";
 import {
   paymentApi,
   type BookingDetail,
@@ -379,6 +380,7 @@ export default function LivePayosScreen({
               </View>
             ))}
           </Panel>
+          <PassengerPriceBreakdown passengers={booking.passengers} />
           <Panel>
             <Label size={12}>Tổng cần thanh toán</Label>
             <Label size={30} weight="bold">

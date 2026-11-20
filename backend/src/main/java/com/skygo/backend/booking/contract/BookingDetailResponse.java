@@ -16,7 +16,7 @@ public record BookingDetailResponse(
       int extraCheckedPieces, int includedMealsPerLeg, String seatType, int strollerPieces) {}
   public record Passenger(String passengerId, String clientPassengerId, String passengerType,
       String title, String givenNames, String surname, LocalDate dateOfBirth, String gender,
-      BookingOpenResponse.Document document, List<Benefit> benefits, String ticketNumber) {}
+      BookingOpenResponse.Document document, List<Benefit> benefits, String ticketNumber, PassengerPrice price) {}
 
   @Override public String toString() { return "BookingDetailResponse[redacted]"; }
 }

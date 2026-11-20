@@ -17,7 +17,7 @@ public record BookingReviewResponse(String reviewId, long version, Instant expir
       List<BaggageOptionsResponse.PassengerBaggage> passengerBaggage) {}
   public record Price(long fareSubtotal,long extraBaggageAmount,BigDecimal vatRate,long vatAmount,long totalAmount) {}
   public record Passenger(String clientPassengerId, PassengerType passengerType, Title title,
-      String givenNames, String surname, LocalDate dateOfBirth, Gender gender, Document document) {
+      String givenNames, String surname, LocalDate dateOfBirth, Gender gender, Document document, PassengerPrice price) {
     @Override public String toString() { return "Passenger[redacted]"; }
   }
   public record Document(DocumentType documentType, String maskedNumber, String issuingCountryCode,

@@ -154,7 +154,12 @@ public class BookingReviewSnapshotService {
   BookingReviewResponse response(BookingReviewSnapshot s) {
     var passengers=s.passengers().stream().map(p->new BookingReviewResponse.Passenger(p.clientPassengerId(),p.passengerType(),p.title(),p.givenNames(),p.surname(),
         p.dateOfBirth(),p.gender(),new BookingReviewResponse.Document(p.document().documentType(),PassengerValidationService.mask(p.document().number()),
-        p.document().issuingCountryCode(),p.document().nationalityCountryCode(),p.document().expiresOn()))).toList();
+        p.document().issuingCountryCode(),p.document().nationalityCountryCode(),p.document().expiresOn()),
+        PassengerPrice.of(s.quote().legs().stream().flatMap(l->l.fareLines().stream())
+            .filter(f->f.passengerType()==p.passengerType()).mapToLong(BookingQuote.FareLine::unitBaseFare).sum(),
+            s.baggage().stream().flatMap(l->l.passengers().stream())
+                .filter(b->b.clientPassengerId().equals(p.clientPassengerId()))
+                .mapToLong(BookingReviewSnapshot.BaggageSelection::extraAmountExclVat).sum()))).toList();
     List<BookingReviewResponse.Leg> legs;
     try {
       legs=s.quote().legs().stream().sorted(Comparator.comparing(BookingQuote.Leg::direction)).map(l->new BookingReviewResponse.Leg(l.direction(),l.flightId(),l.flightNumber(),

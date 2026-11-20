@@ -21,6 +21,10 @@ import {
 import { Button, Label, Notice, Row, Tap } from "@/shared/components/ui";
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
+import {
+  PassengerPriceBreakdown,
+  demoPassengerPrices,
+} from "../components/passenger-price-breakdown";
 export default function PaymentScreen() {
   const b = useBooking();
   const [pending, setPending] = useState(false);
@@ -294,6 +298,14 @@ export default function PaymentScreen() {
           </Label>
         )}
       </Panel>
+      <PassengerPriceBreakdown
+        passengers={
+          b.isLive
+            ? (b.review?.passengers ?? [])
+            : demoPassengerPrices(b.search, b.selected, b.travellers)
+        }
+        includesVat={!b.isLive}
+      />
       <Panel>
         <Label size={18} weight="bold">
           Chi tiết giá

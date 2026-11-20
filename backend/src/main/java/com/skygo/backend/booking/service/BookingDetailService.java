@@ -1,6 +1,7 @@
 package com.skygo.backend.booking.service;
 
 import com.skygo.backend.booking.contract.BookingDetailResponse;
+import com.skygo.backend.booking.contract.PassengerPrice;
 import com.skygo.backend.booking.contract.BookingDetailResponse.*;
 import com.skygo.backend.booking.repository.*;
 import java.time.Clock;
@@ -34,7 +35,10 @@ public class BookingDetailService {
         p.dateOfBirth(),p.gender(),p.document(),p.benefits().stream().map(x ->
             new Benefit(x.direction(),x.carryOnMaxKg(),x.checkedPieces(),
                 x.extraCheckedPieces(),x.includedMealsPerLeg(),x.seatType(),
-                x.strollerPieces())).toList(),p.ticketNumber())).toList();
+                x.strollerPieces())).toList(),p.ticketNumber(),
+        PassengerPrice.of(b.legs().stream().flatMap(l->l.fares().stream())
+                .filter(f->f.passengerType().equals(p.passengerType())).mapToLong(f->f.unitBaseFare()).sum(),
+            p.benefits().stream().mapToLong(x->x.extraBaggageAmount()).sum()))).toList();
     return new BookingDetailResponse(b.bookingId(),b.bookingCode(),b.bookingStatus(),
         b.createdAt(),now,b.tripType(),b.passengerCounts(),b.contact(),
         hold == null ? null : new Hold(hold.publicId(),hold.status(),hold.expiresAt(),

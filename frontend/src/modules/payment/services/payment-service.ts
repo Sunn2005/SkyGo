@@ -58,6 +58,11 @@ export type BookingDetail = {
   } | null;
   legs: BookingLeg[];
   passengers: {
+    price: {
+      fareSubtotal: number;
+      extraBaggageAmount: number;
+      subtotal: number;
+    };
     passengerId: string;
     clientPassengerId: string;
     passengerType: string;

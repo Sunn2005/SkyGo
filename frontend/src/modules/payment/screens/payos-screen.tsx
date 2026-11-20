@@ -14,6 +14,10 @@ import { passengerSummary } from "@/modules/booking/services/booking-rules";
 import { dateLabel } from "@/shared/utils/date";
 import { Screen } from "@/shared/components/screen";
 import { colors as c } from "@/shared/theme";
+import {
+  PassengerPriceBreakdown,
+  demoPassengerPrices,
+} from "../components/passenger-price-breakdown";
 const demoQr = paymentQrImage("SKYGO DEMO - KHONG DUNG DE THANH TOAN");
 
 export default function PayosScreen() {
@@ -201,6 +205,14 @@ function MockPayosScreen() {
           />
         </>
       )}
+      <PassengerPriceBreakdown
+        passengers={demoPassengerPrices(
+          booking.receipt.search,
+          booking.receipt.selected,
+          booking.receipt.travellers,
+        )}
+        includesVat
+      />
       <Tap onPress={() => router.push("/help")}>
         <Label
           size={12}

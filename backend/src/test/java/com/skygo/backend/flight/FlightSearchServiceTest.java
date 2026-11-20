@@ -6,17 +6,21 @@ import static org.mockito.Mockito.*;
 
 import com.skygo.backend.flight.contract.FlightSearchRequest;
 import com.skygo.backend.flight.contract.FlightSearchRequest.*;
+import com.skygo.backend.flight.contract.FlightSearchResponse;
 import com.skygo.backend.flight.contract.NearbyFlightSearchRequest;
+import com.skygo.backend.flight.contract.NearbyFlightSearchResponse;
 import com.skygo.backend.flight.contract.NearbyFlightSearchResponse.DisabledReason;
 import com.skygo.backend.flight.exception.FlightSearchException;
 import com.skygo.backend.flight.repository.FlightSearchRepository;
 import com.skygo.backend.flight.repository.FlightSearchRepository.*;
 import com.skygo.backend.flight.service.FlightSearchService;
+import com.skygo.backend.flight.service.FlightSearchCache;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,8 +33,9 @@ class FlightSearchServiceTest {
   final Instant now = Instant.parse("2027-03-14T01:00:00Z");
   final SeatHoldExpiryService expiry = mock(SeatHoldExpiryService.class);
   final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
+  final FlightSearchCache cache = mock(FlightSearchCache.class);
   final FlightSearchService service = new FlightSearchService(
-      repository, Clock.fixed(now, ZoneOffset.UTC), "SG", "SkyGo", expiry, manager);
+      repository, Clock.fixed(now, ZoneOffset.UTC), "SG", "SkyGo", expiry, manager, cache);
 
   @BeforeEach
   void setup() {
@@ -41,6 +46,32 @@ class FlightSearchServiceTest {
         new AirportRow(2, "BBB", "Tokyo", "Asia/Tokyo")));
     when(repository.search(any())).thenReturn(new SearchRows(0, List.of()));
     when(repository.searchNearby(any())).thenReturn(Map.of());
+    when(cache.getOrLoad(any(), any())).thenAnswer(invocation -> {
+      Supplier<?> loader = invocation.getArgument(1);
+      return loader.get();
+    });
+    when(cache.getNearbyOrLoad(any(), any())).thenAnswer(invocation -> {
+      Supplier<?> loader = invocation.getArgument(1);
+      return loader.get();
+    });
+  }
+
+  @Test
+  void cacheHitStillChecksAirportsAndExpiresHoldsBeforeReturning() {
+    var cached = new FlightSearchResponse(List.of(), new FlightSearchResponse.Pagination(0, 20, 0, 0));
+    doReturn(cached).when(cache).getOrLoad(any(), any());
+
+    assertSame(cached, service.search(request(TripType.ONE_WAY, Direction.OUTBOUND,
+        "2027-03-14", null)));
+
+    verify(repository).activeAirport("AAA");
+    verify(repository).activeAirport("BBB");
+    verify(expiry).expireDue();
+    verify(repository, never()).search(any());
+    var key = ArgumentCaptor.forClass(FlightSearchCache.Query.class);
+    verify(cache).getOrLoad(key.capture(), any());
+    assertEquals(Instant.parse("2027-03-14T05:00:00Z"), key.getValue().dayStart());
+    assertEquals(3, key.getValue().requiredSeats());
   }
 
   @Test
@@ -136,6 +167,27 @@ class FlightSearchServiceTest {
     var dstDay = captor.getValue().days().get(1);
     assertEquals(Instant.parse("2027-03-14T05:00:00Z"), dstDay.start());
     assertEquals(Instant.parse("2027-03-15T04:00:00Z"), dstDay.end());
+  }
+
+  @Test
+  void nearbyCacheHitStillChecksDatesAndExpiresHolds() {
+    var center = LocalDate.parse("2027-03-16");
+    var cached = new NearbyFlightSearchResponse(center, center.minusDays(3),
+        center.plusDays(3), Direction.OUTBOUND, List.of());
+    doReturn(cached).when(cache).getNearbyOrLoad(any(), any());
+
+    assertSame(cached, service.nearbyDays(
+        nearby(TripType.ONE_WAY, Direction.OUTBOUND, center.toString(), null)));
+
+    verify(repository).activeAirport("AAA");
+    verify(repository).activeAirport("BBB");
+    verify(expiry).expireDue();
+    verify(repository, never()).searchNearby(any());
+    var key = ArgumentCaptor.forClass(FlightSearchCache.NearbyQuery.class);
+    verify(cache).getNearbyOrLoad(key.capture(), any());
+    assertEquals(LocalDate.parse("2027-03-13"), key.getValue().today());
+    assertEquals(7, key.getValue().windows().size());
+    assertEquals(3, key.getValue().requiredSeats());
   }
 
   @Test

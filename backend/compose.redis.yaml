@@ -1,0 +1,7 @@
+name: skygo-redis
+
+services:
+  redis:
+    image: redis:8.10.3-alpine
+    ports:
+      - "127.0.0.1:6379:6379"

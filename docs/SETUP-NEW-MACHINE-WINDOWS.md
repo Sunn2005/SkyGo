@@ -1,5 +1,7 @@
 # Chạy SkyGo trên máy Windows mới — MariaDB Vector
 
+Phần cache và rate limit đổi chuyến cần Redis. Xem [hướng dẫn cài Docker, chạy Redis và backend](guide/backend-redis-docker.md) trước khi thử luồng đặt vé.
+
 Hướng dẫn cho thành viên vừa pull code, dùng database riêng trên laptop. Dữ liệu tạo bởi migration trên máy mới nên ngày bay, tài khoản và số document có thể khác máy Quân. **Không cần Docker/Qdrant cho phần AI nữa.**
 
 Thứ tự: **cài môi trường → tạo `.env` → chạy migration với AI tắt → lập index → bật backend AI → chạy Expo**. Nếu đã có vector trong Qdrant trên chính máy mình, dùng [hướng dẫn chuyển vector](ai/mariadb-vector-migration.md) thay vì embed lại toàn bộ.

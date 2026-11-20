@@ -1,5 +1,7 @@
 # SkyGo backend
 
+Máy mới cần chạy backend với Redis: xem [hướng dẫn Docker, Redis, cache và rate limit](../docs/guide/backend-redis-docker.md).
+
 ## Nền tảng AI/RAG
 
 Chuyển từ Qdrant: [hướng dẫn chuyển vector không embed lại](../docs/ai/mariadb-vector-migration.md).

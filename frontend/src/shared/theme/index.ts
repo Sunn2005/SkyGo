@@ -4,6 +4,7 @@ export const colors = {
   muted: "#647789",
   primary: "#087F82",
   tint: "#EAF6F4",
+  rangeTint: "#B8E0DC",
   line: "#DFE7ED",
   background: "#EEEEEE",
   surface: "#FFFFFF",

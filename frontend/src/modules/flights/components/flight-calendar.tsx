@@ -171,6 +171,9 @@ export function FlightCalendar({
                 iso >= rangeStart &&
                 iso <= rangeEnd &&
                 !disabled;
+              const rangeEndpoint =
+                inRange && (iso === rangeStart || iso === rangeEnd);
+              const highlighted = selected || rangeEndpoint;
               return (
                 <Tap
                   key={weekday}
@@ -183,25 +186,17 @@ export function FlightCalendar({
                     minHeight: 44,
                     alignItems: "center",
                     borderRadius: 10,
-                    backgroundColor: selected
+                    backgroundColor: highlighted
                       ? c.primary
                       : inRange
-                        ? c.tint
+                        ? c.rangeTint
                         : "transparent",
                   }}
                 >
                   <Label
                     size={15}
-                    weight={selected ? "semibold" : "regular"}
-                    color={
-                      selected
-                        ? c.white
-                        : disabled
-                          ? c.muted
-                          : inRange
-                            ? c.primary
-                            : c.ink
-                    }
+                    weight={highlighted ? "semibold" : "regular"}
+                    color={highlighted ? c.white : disabled ? c.muted : c.ink}
                   >
                     {day}
                   </Label>
